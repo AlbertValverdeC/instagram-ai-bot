@@ -62,7 +62,7 @@ TEMPLATES = [
 
 # Font sizes (will be scaled relative to slide dimensions)
 FONT_SIZES = {
-    "cover_title": 72,
+    "cover_title": 88,           # large bold for viral "thumbnail" impact
     "cover_subtitle": 36,
     "slide_title": 48,
     "slide_body": 38,
@@ -70,6 +70,7 @@ FONT_SIZES = {
     "cta_title": 56,
     "cta_body": 36,
     "watermark": 24,
+    "swipe_indicator": 26,       # swipe CTA at bottom of cover
 }
 
 # Layout positions (as fractions of slide dimensions)

@@ -227,7 +227,7 @@ def daily_pipeline(dry_run: bool = False, test_mode: bool = False, step: str | N
     if step is None or step == "design":
         logger.info("\n🎨 STEP 3: Design — Creating carousel images...")
         from modules.carousel_designer import create
-        image_paths = create(content, template_index=template_idx)
+        image_paths = create(content, template_index=template_idx, topic=topic)
         logger.info(f"✓ Created {len(image_paths)} slide images")
         for p in image_paths:
             logger.info(f"  → {p}")

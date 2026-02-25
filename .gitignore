@@ -1,0 +1,9 @@
+.env
+output/*.png
+output/*.jpg
+logs/*.log
+data/history.json
+__pycache__/
+*.pyc
+.venv/
+venv/

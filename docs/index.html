@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Instagram AI Bot — Documentaci&oacute;n</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   CSS — Dark theme, autocontenido, responsive
+   ═══════════════════════════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:        #0a0f1a;
+  --bg-card:   #111827;
+  --bg-code:   #1a2236;
+  --bg-nav:    #0d1322;
+  --border:    #1e293b;
+  --text:      #e2e8f0;
+  --text-dim:  #94a3b8;
+  --accent:    #00c8ff;
+  --accent2:   #c084fc;
+  --green:     #34d399;
+  --orange:    #fb923c;
+  --red:       #f87171;
+  --pink:      #f472b6;
+  --radius:    10px;
+  --nav-w:     260px;
+}
+
+html{scroll-behavior:smooth;scroll-padding-top:80px}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.7;
+  display:flex;min-height:100vh;
+}
+
+/* ── NAV LATERAL ─────────────────────────────────────────────── */
+nav{
+  position:fixed;top:0;left:0;bottom:0;width:var(--nav-w);
+  background:var(--bg-nav);border-right:1px solid var(--border);
+  padding:28px 0;overflow-y:auto;z-index:100;
+  display:flex;flex-direction:column;
+}
+nav .logo{
+  padding:0 24px 24px;border-bottom:1px solid var(--border);
+  margin-bottom:16px;
+}
+nav .logo h2{font-size:18px;font-weight:700;letter-spacing:-.3px}
+nav .logo h2 span{color:var(--accent)}
+nav .logo p{font-size:12px;color:var(--text-dim);margin-top:2px}
+nav a{
+  display:block;padding:10px 24px;font-size:14px;
+  color:var(--text-dim);text-decoration:none;
+  border-left:3px solid transparent;transition:all .15s;
+}
+nav a:hover,nav a.active{
+  color:var(--accent);background:rgba(0,200,255,.06);
+  border-left-color:var(--accent);
+}
+nav a .num{
+  display:inline-block;width:22px;font-size:11px;
+  color:var(--text-dim);font-weight:600;
+}
+
+/* ── MAIN ────────────────────────────────────────────────────── */
+main{
+  margin-left:var(--nav-w);flex:1;
+  padding:48px 48px 120px;max-width:960px;
+}
+
+/* ── HEADINGS ────────────────────────────────────────────────── */
+h1{
+  font-size:36px;font-weight:800;letter-spacing:-.5px;
+  margin-bottom:8px;
+}
+h1 span{color:var(--accent)}
+.subtitle{color:var(--text-dim);font-size:16px;margin-bottom:48px}
+
+h2{
+  font-size:24px;font-weight:700;margin:56px 0 20px;
+  padding-bottom:10px;border-bottom:1px solid var(--border);
+  letter-spacing:-.3px;
+}
+h2 .badge{
+  display:inline-block;font-size:11px;font-weight:600;
+  padding:2px 8px;border-radius:20px;vertical-align:middle;
+  margin-left:8px;
+}
+h3{font-size:18px;font-weight:600;margin:28px 0 12px;color:var(--accent)}
+h4{font-size:15px;font-weight:600;margin:20px 0 8px;color:var(--text)}
+
+/* ── CARDS ───────────────────────────────────────────────────── */
+.card{
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:24px;margin:16px 0;
+}
+.card.accent{border-left:3px solid var(--accent)}
+.card.green{border-left:3px solid var(--green)}
+.card.orange{border-left:3px solid var(--orange)}
+.card.pink{border-left:3px solid var(--pink)}
+
+/* ── PIPELINE DIAGRAM ────────────────────────────────────────── */
+.pipeline{
+  display:flex;gap:12px;flex-wrap:wrap;
+  margin:24px 0;
+}
+.pipe-step{
+  flex:1;min-width:140px;
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px;text-align:center;
+  position:relative;
+}
+.pipe-step .step-num{
+  display:inline-block;width:28px;height:28px;line-height:28px;
+  border-radius:50%;background:var(--accent);color:var(--bg);
+  font-size:13px;font-weight:700;margin-bottom:8px;
+}
+.pipe-step .step-title{font-weight:700;font-size:14px;margin-bottom:4px}
+.pipe-step .step-desc{font-size:12px;color:var(--text-dim)}
+.pipe-arrow{
+  display:flex;align-items:center;color:var(--text-dim);
+  font-size:20px;flex-shrink:0;
+}
+
+/* ── CODE BLOCKS ─────────────────────────────────────────────── */
+pre,code{font-family:"SF Mono",SFMono-Regular,Menlo,Consolas,monospace}
+code{
+  background:var(--bg-code);padding:2px 6px;border-radius:4px;
+  font-size:13px;color:var(--accent);
+}
+pre{
+  background:var(--bg-code);border:1px solid var(--border);
+  border-radius:var(--radius);padding:18px 20px;
+  overflow-x:auto;font-size:13px;line-height:1.6;
+  margin:12px 0;
+}
+pre code{background:none;padding:0;color:var(--text)}
+
+/* ── TABLES ──────────────────────────────────────────────────── */
+table{
+  width:100%;border-collapse:collapse;margin:16px 0;
+  font-size:14px;
+}
+th,td{
+  padding:10px 14px;text-align:left;
+  border-bottom:1px solid var(--border);
+}
+th{
+  font-size:12px;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--text-dim);font-weight:600;
+}
+tr:hover td{background:rgba(255,255,255,.02)}
+
+/* ── LISTS ───────────────────────────────────────────────────── */
+ul,ol{margin:8px 0 8px 24px}
+li{margin:4px 0;font-size:15px}
+li code{font-size:12px}
+
+/* ── TEMPLATE PREVIEWS ───────────────────────────────────────── */
+.templates-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+  gap:16px;margin:20px 0;
+}
+.tpl-card{
+  border-radius:var(--radius);overflow:hidden;
+  border:1px solid var(--border);
+}
+.tpl-preview{
+  height:180px;display:flex;align-items:center;justify-content:center;
+  flex-direction:column;gap:6px;padding:16px;
+}
+.tpl-preview .tpl-title{font-size:18px;font-weight:700}
+.tpl-preview .tpl-body{font-size:12px;opacity:.8}
+.tpl-preview .tpl-accent{height:3px;width:40px;border-radius:2px;margin-top:4px}
+.tpl-info{
+  background:var(--bg-card);padding:12px 14px;
+  font-size:13px;
+}
+.tpl-info strong{display:block;margin-bottom:2px}
+.tpl-info span{color:var(--text-dim);font-size:12px}
+
+/* ── BADGES & TAGS ───────────────────────────────────────────── */
+.tag{
+  display:inline-block;font-size:11px;font-weight:600;
+  padding:3px 10px;border-radius:20px;margin:2px 4px 2px 0;
+}
+.tag.blue{background:rgba(0,200,255,.15);color:var(--accent)}
+.tag.green{background:rgba(52,211,153,.15);color:var(--green)}
+.tag.orange{background:rgba(251,146,60,.15);color:var(--orange)}
+.tag.pink{background:rgba(244,114,182,.15);color:var(--pink)}
+.tag.red{background:rgba(248,113,113,.15);color:var(--red)}
+
+/* ── FILE TREE ───────────────────────────────────────────────── */
+.file-tree{
+  background:var(--bg-code);border:1px solid var(--border);
+  border-radius:var(--radius);padding:20px 24px;
+  font-family:monospace;font-size:13px;line-height:1.8;
+  margin:16px 0;overflow-x:auto;
+}
+.file-tree .dir{color:var(--accent)}
+.file-tree .file{color:var(--text-dim)}
+.file-tree .desc{color:#64748b;font-style:italic}
+
+/* ── FAQ ─────────────────────────────────────────────────────── */
+details{
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius);margin:8px 0;
+}
+details[open]{border-color:var(--accent)}
+summary{
+  padding:14px 18px;cursor:pointer;font-weight:600;font-size:15px;
+  list-style:none;display:flex;align-items:center;gap:10px;
+}
+summary::before{
+  content:"";display:inline-block;width:6px;height:6px;
+  border-right:2px solid var(--accent);border-bottom:2px solid var(--accent);
+  transform:rotate(-45deg);transition:transform .2s;flex-shrink:0;
+}
+details[open] summary::before{transform:rotate(45deg)}
+details .faq-body{
+  padding:0 18px 16px;font-size:14px;color:var(--text-dim);
+  line-height:1.7;
+}
+details .faq-body code{font-size:12px}
+
+/* ── COST HIGHLIGHT ──────────────────────────────────────────── */
+.cost-total{
+  display:inline-block;font-size:32px;font-weight:800;
+  color:var(--green);margin:8px 0;
+}
+
+/* ── HAMBURGER (mobile) ──────────────────────────────────────── */
+.hamburger{
+  display:none;position:fixed;top:16px;left:16px;z-index:200;
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:8px;width:40px;height:40px;
+  cursor:pointer;align-items:center;justify-content:center;
+  color:var(--text);font-size:20px;
+}
+.overlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
+  z-index:90;
+}
+
+/* ── RESPONSIVE ──────────────────────────────────────────────── */
+@media(max-width:768px){
+  nav{transform:translateX(-100%);transition:transform .25s}
+  nav.open{transform:translateX(0)}
+  .hamburger{display:flex}
+  .overlay.open{display:block}
+  main{margin-left:0;padding:24px 20px 80px}
+  h1{font-size:28px}
+  h2{font-size:20px}
+  .pipeline{flex-direction:column}
+  .pipe-arrow{transform:rotate(90deg);justify-content:center}
+  .templates-grid{grid-template-columns:1fr 1fr}
+  table{font-size:12px}
+  th,td{padding:8px 10px}
+}
+@media(max-width:480px){
+  .templates-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- Hamburger (mobile) -->
+<button class="hamburger" onclick="toggleNav()" aria-label="Menu">&#9776;</button>
+<div class="overlay" id="overlay" onclick="toggleNav()"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     NAVEGACI&Oacute;N LATERAL
+     ═══════════════════════════════════════════════════════════════ -->
+<nav id="nav">
+  <div class="logo">
+    <h2><span>IG</span> AI Bot</h2>
+    <p>Documentaci&oacute;n v2.0</p>
+  </div>
+  <a href="#vision"      onclick="closeNav()"><span class="num">01</span> Visi&oacute;n general</a>
+  <a href="#arquitectura" onclick="closeNav()"><span class="num">02</span> Arquitectura</a>
+  <a href="#modulos"     onclick="closeNav()"><span class="num">03</span> M&oacute;dulos</a>
+  <a href="#configuracion" onclick="closeNav()"><span class="num">04</span> Configuraci&oacute;n</a>
+  <a href="#uso"         onclick="closeNav()"><span class="num">05</span> Uso (CLI)</a>
+  <a href="#templates"   onclick="closeNav()"><span class="num">06</span> Templates visuales</a>
+  <a href="#engagement"  onclick="closeNav()"><span class="num">07</span> Engagement</a>
+  <a href="#costes"      onclick="closeNav()"><span class="num">08</span> Costes</a>
+  <a href="#faq"         onclick="closeNav()"><span class="num">09</span> FAQ</a>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     CONTENIDO PRINCIPAL
+     ═══════════════════════════════════════════════════════════════ -->
+<main>
+
+<h1><span>Instagram AI Bot</span></h1>
+<p class="subtitle">Bot automatizado para crear y publicar carruseles de contenido tech/IA en Instagram.</p>
+
+
+<!-- ─────────────────────────────────────────────────────────────
+     01. VISI&Oacute;N GENERAL
+     ───────────────────────────────────────────────────────────── -->
+<h2 id="vision"><span class="badge" style="background:rgba(0,200,255,.15);color:var(--accent)">01</span> Visi&oacute;n general</h2>
+
+<p><strong>Instagram AI Bot</strong> es una aplicaci&oacute;n Python que automatiza por completo el ciclo de vida de un post de Instagram:</p>
+
+<ol>
+  <li><strong>Investiga</strong> temas trending de tecnolog&iacute;a e IA desde m&uacute;ltiples fuentes (NewsAPI, Reddit, RSS, Google Trends).</li>
+  <li><strong>Dirige</strong> los prompts de los modelos downstream con un Prompt Director (<code>GPT-4o</code>) que craftea prompts din&aacute;micos y optimizados.</li>
+  <li><strong>Genera</strong> contenido en espa&ntilde;ol para un carrusel de 8 slides usando OpenAI (<code>gpt-4o-mini</code>) con prompts del Director.</li>
+  <li><strong>Dise&ntilde;a</strong> im&aacute;genes visualmente atractivas (1080&times;1350px) con fondos AI (Gemini Imagen 3) + Pillow, aplicando templates de color rotativos.</li>
+  <li><strong>Construye</strong> una estrategia de engagement: hashtags optimizados, captions con CTA y horario de publicaci&oacute;n.</li>
+  <li><strong>Publica</strong> el carrusel en Instagram v&iacute;a la Graph API de Meta.</li>
+</ol>
+
+<div class="card accent">
+  <strong>Audiencia objetivo:</strong> Cuentas de Instagram en espa&ntilde;ol enfocadas en tecnolog&iacute;a, inteligencia artificial e innovaci&oacute;n.<br>
+  <strong>Formato:</strong> Carruseles de 8 slides (1 cover + 6 contenido + 1 CTA).<br>
+  <strong>Idioma del contenido:</strong> Espa&ntilde;ol.
+</div>
+
+
+<!-- ─────────────────────────────────────────────────────────────
+     02. ARQUITECTURA
+     ───────────────────────────────────────────────────────────── -->
+<h2 id="arquitectura"><span class="badge" style="background:rgba(192,132,252,.15);color:var(--accent2)">02</span> Arquitectura</h2>
+
+<h3>Pipeline de 5 pasos + Prompt Director</h3>
+
+<div class="card accent" style="margin-bottom:20px">
+  <strong>Prompt Director (GPT-4o)</strong> &mdash; Capa de meta-prompting que craftea prompts din&aacute;micos para los pasos 1, 2 y 3. Si falla, cada paso usa su prompt hardcodeado original (fallback transparente).
+</div>
+
+<div class="pipeline">
+  <div class="pipe-step">
+    <div class="step-num">1</div>
+    <div class="step-title">Research</div>
+    <div class="step-desc">NewsAPI, Reddit, RSS, Google Trends + Director prompt</div>
+  </div>
+  <div class="pipe-arrow">&rarr;</div>
+  <div class="pipe-step">
+    <div class="step-num">2</div>
+    <div class="step-title">Content</div>
+    <div class="step-desc">gpt-4o-mini genera 8 slides con Director prompt</div>
+  </div>
+  <div class="pipe-arrow">&rarr;</div>
+  <div class="pipe-step">
+    <div class="step-num">3</div>
+    <div class="step-title">Design</div>
+    <div class="step-desc">Gemini Imagen 3 (cover) + Pillow PNGs 1080&times;1350</div>
+  </div>
+  <div class="pipe-arrow">&rarr;</div>
+  <div class="pipe-step">
+    <div class="step-num">4</div>
+    <div class="step-title">Engage</div>
+    <div class="step-desc">Hashtags, caption, horario</div>
+  </div>
+  <div class="pipe-arrow">&rarr;</div>
+  <div class="pipe-step">
+    <div class="step-num">5</div>
+    <div class="step-title">Publish</div>
+    <div class="step-desc">Imgur + Instagram Graph API</div>
+  </div>
+</div>
+
+<h3>Estructura de archivos</h3>
+<div class="file-tree">
+<span class="dir">instagram-ai-bot/</span><br>
+&nbsp;&nbsp;<span class="file">.env.example</span> <span class="desc"># Template de configuraci&oacute;n</span><br>
+&nbsp;&nbsp;<span class="file">requirements.txt</span> <span class="desc"># Dependencias Python</span><br>
+&nbsp;&nbsp;<span class="file">main_pipeline.py</span> <span class="desc"># Orquestador principal (CLI)</span><br>
+&nbsp;&nbsp;<span class="dir">config/</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">settings.py</span> <span class="desc"># Paths, API keys, constantes</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">templates.py</span> <span class="desc"># 4 esquemas de color para carruseles</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">engagement.py</span> <span class="desc"># Hashtags, CTAs, horarios</span><br>
+&nbsp;&nbsp;<span class="dir">modules/</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">prompt_director.py</span> <span class="desc"># <strong style="color:var(--green)">NUEVO</strong> Meta-prompting con GPT-4o</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">image_generator.py</span> <span class="desc"># <strong style="color:var(--green)">NUEVO</strong> Fondos AI con Gemini Imagen 3</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">researcher.py</span> <span class="desc"># Paso 1: Buscar temas trending</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">content_generator.py</span> <span class="desc"># Paso 2: Generar texto del carrusel</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">carousel_designer.py</span> <span class="desc"># Paso 3: Renderizar im&aacute;genes (AI bg + Pillow)</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">engagement.py</span> <span class="desc"># Paso 4: Estrategia de publicaci&oacute;n</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">publisher.py</span> <span class="desc"># Paso 5: Subir a Instagram</span><br>
+&nbsp;&nbsp;<span class="dir">assets/</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">fonts/</span> <span class="desc"># Fuentes personalizadas (Inter, Montserrat)</span><br>
+&nbsp;&nbsp;<span class="dir">data/</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">history.json</span> <span class="desc"># Historial de posts publicados</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">last_topic.json</span> <span class="desc"># &Uacute;ltimo tema investigado</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">last_content.json</span> <span class="desc"># &Uacute;ltimo contenido generado</span><br>
+&nbsp;&nbsp;<span class="dir">output/</span> <span class="desc"># Im&aacute;genes generadas (slide_00.png &ndash; slide_07.png)</span><br>
+&nbsp;&nbsp;<span class="dir">logs/</span> <span class="desc"># Logs con timestamp</span>
+</div>
+
+<h3>Flujo de datos</h3>
+<pre><code>                    ┌──────────────────┐
+                    │  Prompt Director  │
+                    │     (GPT-4o)      │
+                    └────────┬─────────┘
+                             │
+            crafts prompts for 3 downstream calls
+                             │
+         ┌───────────────────┼───────────────────┐
+         │                   │                   │
+   research_prompt     content_prompt     cover_image_prompt
+         │                   │                   │
+         ▼                   ▼                   ▼
+   researcher.py       content_gen.py     image_generator.py
+   (gpt-4o-mini)      (gpt-4o-mini)     (Gemini Imagen 3)
+         │                   │                   │
+         ▼                   ▼              ▼         ▼
+     topic dict         content dict    AI image   gradient
+                                          └────┬────┘
+                                               ▼
+                                       carousel_designer.py
+                                           (Pillow)
+                                               │
+                                               ▼
+                                        output/slide_*.png
+                                               │
+                    engagement.py (l&oacute;gica) ─────┘
+                         │
+                    publisher.py (Imgur + Graph API) &rarr; Instagram
+                         │
+                    data/history.json (append)</code></pre>
+
+<div class="card green">
+  <strong>Fallback en cascada:</strong> Si el Prompt Director falla &rarr; se usan prompts hardcodeados. Si Gemini Imagen falla &rarr; se usa el degradado de Pillow. El pipeline nunca se rompe.
+</div>
+
+
+<!-- ─────────────────────────────────────────────────────────────
+     03. M&Oacute;DULOS
+     ───────────────────────────────────────────────────────────── -->
+<h2 id="modulos"><span class="badge" style="background:rgba(52,211,153,.15);color:var(--green)">03</span> M&oacute;dulos</h2>
+
+<!-- prompt_director -->
+<h3>modules/prompt_director.py <span class="tag green">NUEVO</span></h3>
+<div class="card" style="border-left:3px solid var(--accent2)">
+  <p><strong>Clase principal:</strong> <code>PromptDirector</code></p>
+  <p>Usa GPT-4o para craftear prompts din&aacute;micos y optimizados para los modelos downstream. Adapta el tono, estilo y enfoque seg&uacute;n el d&iacute;a de la semana, el tipo de tema y el historial reciente. Cada m&eacute;todo retorna <code>None</code> si falla, permitiendo fallback al prompt hardcodeado.</p>
+</div>
+
+<h4>M&eacute;todos</h4>
+<table>
+  <thead><tr><th>M&eacute;todo</th><th>Modelo</th><th>Temp</th><th>Descripci&oacute;n</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>craft_research_prompt()</code></td>
+      <td>GPT-4o</td>
+      <td>0.6</td>
+      <td>Prompt &oacute;ptimo para rankear topics. Adapta seg&uacute;n d&iacute;a (lunes &rarr; forward-looking, viernes &rarr; recap) y diversidad del historial.</td>
+    </tr>
+    <tr>
+      <td><code>craft_content_prompt()</code></td>
+      <td>GPT-4o</td>
+      <td>0.7</td>
+      <td>Prompt &oacute;ptimo para generar carrusel. Tono seg&uacute;n virality_score (9-10 &rarr; dram&aacute;tico, 7-8 &rarr; informativo, 5-6 &rarr; exploratorio).</td>
+    </tr>
+    <tr>
+      <td><code>craft_cover_image_prompt()</code></td>
+      <td>GPT-4o</td>
+      <td>0.9</td>
+      <td>Prompt de 1-3 frases para Gemini Imagen. Abstracto, sin texto, complementa la paleta del template.</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- image_generator -->
+<h3>modules/image_generator.py <span class="tag green">NUEVO</span></h3>
+<div class="card" style="border-left:3px solid var(--accent2)">
+  <p><strong>Funci&oacute;n principal:</strong> <code>generate_cover_background(prompt, aspect_ratio) &rarr; PIL.Image | None</code></p>
+  <p>Genera fondos AI para el cover slide usando Google Gemini Imagen 3 (<code>imagen-3.0-generate-002</code>). Retorna <code>None</code> si falla (API key ausente, cuota excedida, safety filter, error de red, o paquete no instalado).</p>
+</div>
+
+<h4>Configuraci&oacute;n</h4>
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Descripci&oacute;n</th></tr></thead>
+  <tbody>
+    <tr><td><code>GOOGLE_AI_API_KEY</code></td><td>(vac&iacute;o)</td><td>API key de Google AI Studio</td></tr>
+    <tr><td><code>GOOGLE_IMAGE_MODEL</code></td><td><code>imagen-3.0-generate-002</code></td><td>Modelo de generaci&oacute;n de im&aacute;genes</td></tr>
+  </tbody>
+</table>
+
+<!-- researcher -->
+<h3>modules/researcher.py</h3>
+<div class="card accent">
+  <p><strong>Funci&oacute;n principal:</strong> <code>find_trending_topic() &rarr; dict</code></p>
+  <p>Busca temas trending en paralelo desde 4 fuentes (ThreadPoolExecutor, 4 workers), elimina duplicados contra <code>history.json</code> y usa OpenAI para rankear y seleccionar el mejor tema. <strong>Integra el Prompt Director</strong> para obtener prompts optimizados; si falla, usa el prompt hardcodeado original.</p>
+</div>
+
+<h4>Fuentes de datos</h4>
+<table>
+  <thead><tr><th>Fuente</th><th>M&eacute;todo</th><th>Detalles</th></tr></thead>
+  <tbody>
+    <tr><td>NewsAPI</td><td>Top headlines</td><td>Categor&iacute;a: technology, idioma: en</td></tr>
+    <tr><td>RSS Feeds</td><td>feedparser</td><td>TechCrunch, The Verge, Ars Technica, MIT Tech Review</td></tr>
+    <tr><td>Reddit</td><td>PRAW</td><td>r/artificial, r/technology, r/MachineLearning, r/ChatGPT</td></tr>
+    <tr><td>Google Trends</td><td>pytrends</td><td>Trending en Espa&ntilde;a, filtrado por keywords tech</td></tr>
+  </tbody>
+</table>
+
+<h4>Output</h4>
+<pre><code>{
+  "topic":         "T&iacute;tulo en espa&ntilde;ol (5-10 palabras)",
+  "topic_en":      "English translation",
+  "why":           "Una frase explicando la viralidad",
+  "key_points":    ["6 datos espec&iacute;ficos con n&uacute;meros"],
+  "source_urls":   ["url1", "url2"],
+  "virality_score": 8
+}</code></pre>
+
+<!-- content_generator -->
+<h3>modules/content_generator.py</h3>
+<div class="card green">
+  <p><strong>Funci&oacute;n principal:</strong> <code>generate(topic: dict) &rarr; dict</code></p>
+  <p>Recibe el topic del researcher y genera la estructura completa del carrusel v&iacute;a OpenAI. Produce 8 slides con restricciones de tono y longitud. <strong>Integra el Prompt Director</strong> para prompts adaptados al tipo de tema y virality score.</p>
+</div>
+
+<h4>Tipos de slides</h4>
+<table>
+  <thead><tr><th>Slide</th><th>Tipo</th><th>Contenido</th></tr></thead>
+  <tbody>
+    <tr><td>#1</td><td><span class="tag blue">cover</span></td><td>T&iacute;tulo gancho + subt&iacute;tulo</td></tr>
+    <tr><td>#2 &ndash; #7</td><td><span class="tag green">content</span></td><td>Un punto clave por slide, numerado, max 40 palabras</td></tr>
+    <tr><td>#8</td><td><span class="tag orange">cta</span></td><td>Call-to-action: guardar, compartir, seguir</td></tr>
+  </tbody>
+</table>
+
+<h4>Restricciones del prompt</h4>
+<ul>
+  <li>Todo en espa&ntilde;ol</li>
+  <li>M&aacute;ximo 40 palabras por slide</li>
+  <li>Datos concretos (n&uacute;meros, nombres, fechas)</li>
+  <li>Tono informativo y accesible</li>
+  <li>Emojis moderados (1-2 por slide)</li>
+</ul>
+
+<!-- carousel_designer -->
+<h3>modules/carousel_designer.py</h3>
+<div class="card pink">
+  <p><strong>Funci&oacute;n principal:</strong> <code>create(content, template_index, topic) &rarr; list[Path]</code></p>
+  <p>Renderiza las im&aacute;genes del carrusel usando Pillow. Cada slide es un PNG de 1080&times;1350px. <strong>El cover slide usa fondos generados por Gemini Imagen 3</strong> (con overlay oscuro para legibilidad). Si la generaci&oacute;n AI falla, usa degradados como fallback.</p>
+</div>
+
+<h4>Funciones de renderizado</h4>
+<table>
+  <thead><tr><th>Funci&oacute;n</th><th>Descripci&oacute;n</th></tr></thead>
+  <tbody>
+    <tr><td><code>_create_cover_slide()</code></td><td>T&iacute;tulo grande, subt&iacute;tulo, indicador "Desliza para m&aacute;s &rarr;"</td></tr>
+    <tr><td><code>_create_content_slide()</code></td><td>N&uacute;mero de slide (1/6), t&iacute;tulo, cuerpo, puntos de progreso, watermark</td></tr>
+    <tr><td><code>_create_cta_slide()</code></td><td>T&iacute;tulo grande, cuerpo, handle de Instagram, puntos de progreso</td></tr>
+  </tbody>
+</table>
+
+<h4>Elementos visuales</h4>
+<ul>
+  <li><strong>Cover:</strong> Fondo AI (Gemini Imagen 3) con overlay oscuro (alpha ~140), o degradado vertical como fallback</li>
+  <li><strong>Content/CTA:</strong> Fondos con degradado vertical (interpolaci&oacute;n de color)</li>
+  <li>L&iacute;nea de acento decorativa bajo los t&iacute;tulos</li>
+  <li>Watermark: handle de Instagram con opacidad al 80%</li>
+  <li>Indicador de progreso: puntos en la parte inferior</li>
+  <li>Ajuste de texto con interlineado (1.4&ndash;1.6x)</li>
+</ul>
+
+<h4>Estrategia de fuentes</h4>
+<ol>
+  <li>Intenta cargar fuentes custom: Inter, Montserrat (desde <code>assets/fonts/</code>)</li>
+  <li>Fallback a fuentes del sistema: Helvetica (macOS), DejaVuSans (Linux)</li>
+  <li>Fallback final: fuente b&aacute;sica de PIL</li>
+</ol>
+
+<!-- engagement -->
+<h3>modules/engagement.py</h3>
+<div class="card orange">
+  <p><strong>Funci&oacute;n principal:</strong> <code>get_strategy(topic, content) &rarr; dict</code></p>
+  <p>Construye la estrategia completa de publicaci&oacute;n: selecci&oacute;n de hashtags de 3 pools, montaje del caption con CTA, y c&aacute;lculo del horario &oacute;ptimo seg&uacute;n el d&iacute;a de la semana.</p>
+</div>
+
+<h4>Output</h4>
+<pre><code>{
+  "hashtags":     "#tag1 #tag2 ... (30 hashtags)",
+  "full_caption": "Caption completo con emojis y hashtags",
+  "posting_time": "08:30",
+  "day_type":     "weekday_carousel | saturday_recap | sunday_rest",
+  "timezone":     "Europe/Madrid"
+}</code></pre>
+
+<!-- publisher -->
+<h3>modules/publisher.py</h3>
+<div class="card" style="border-left:3px solid var(--red)">
+  <p><strong>Funci&oacute;n principal:</strong> <code>publish(image_paths, content, strategy) &rarr; str</code></p>
+  <p>Sube las im&aacute;genes a Imgur, crea el carrusel v&iacute;a la Instagram Graph API v21.0, y guarda el resultado en <code>history.json</code>.</p>
+</div>
+
+<h4>Flujo de publicaci&oacute;n</h4>
+<ol>
+  <li><strong>Upload a Imgur:</strong> Sube cada PNG y obtiene URLs p&uacute;blicas (1s entre uploads para rate limiting).</li>
+  <li><strong>Create carousel items:</strong> Crea un contenedor por imagen v&iacute;a Graph API.</li>
+  <li><strong>Create container:</strong> Agrupa todos los items con el caption.</li>
+  <li><strong>Publish:</strong> Publica el contenedor (espera status FINISHED, max 10 intentos, 5s entre polls).</li>
+  <li><strong>Save history:</strong> A&ntilde;ade metadata al <code>history.json</code>.</li>
+</ol>
+
+
+<!-- ─────────────────────────────────────────────────────────────
+     04. CONFIGURACI&Oacute;N
+     ───────────────────────────────────────────────────────────── -->
+<h2 id="configuracion"><span class="badge" style="background:rgba(251,146,60,.15);color:var(--orange)">04</span> Configuraci&oacute;n</h2>
+
+<h3>Paso 1 &mdash; Clonar e instalar</h3>
+<pre><code>git clone &lt;repo-url&gt;
+cd instagram-ai-bot
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt</code></pre>
+
+<h3>Paso 2 &mdash; Crear el archivo .env</h3>
+<pre><code>cp .env.example .env</code></pre>
+
+<h3>Paso 3 &mdash; Configurar API keys</h3>
+<p>Edita el archivo <code>.env</code> con tus credenciales:</p>
+
+<pre><code># OpenAI API
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# News & Trending Data
+NEWSAPI_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Reddit Data
+REDDIT_CLIENT_ID=xxxxxxxxxxxxxxxx
+REDDIT_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+REDDIT_USER_AGENT=instagram-ai-bot/1.0
+
+# Instagram Publishing
+INSTAGRAM_ACCOUNT_ID=17841400000000000
+FACEBOOK_PAGE_ID=000000000000000
+META_ACCESS_TOKEN=EAAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Image Hosting
+IMGUR_CLIENT_ID=xxxxxxxxxxxxxxxx
+
+# Google AI — Imagen 3 for cover backgrounds (optional)
+GOOGLE_AI_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Prompt Director model (optional, default: gpt-4o)
+# DIRECTOR_MODEL=gpt-4o
+
+# Timezone & Branding
+TIMEZONE=Europe/Madrid
+INSTAGRAM_HANDLE=@tu_cuenta_tech</code></pre>
+
+<h3>Paso 4 &mdash; Obtener las API keys</h3>
+
+<div class="card accent">
+  <h4>OpenAI</h4>
+  <ol>
+    <li>Ve a <code>platform.openai.com/api-keys</code></li>
+    <li>Crea una nueva API key</li>
+    <li>El bot usa <code>gpt-4o-mini</code> (research + content) y <code>gpt-4o</code> (Prompt Director)</li>
+  </ol>
+</div>
+
+<div class="card green">
+  <h4>NewsAPI</h4>
+  <ol>
+    <li>Reg&iacute;strate en <code>newsapi.org</code></li>
+    <li>El tier gratuito incluye 1.500 requests/mes (suficiente)</li>
+  </ol>
+</div>
+
+<div class="card orange">
+  <h4>Reddit</h4>
+  <ol>
+    <li>Ve a <code>reddit.com/prefs/apps</code></li>
+    <li>Crea una app tipo <strong>&ldquo;script&rdquo;</strong></li>
+    <li>Copia el Client ID y Client Secret</li>
+  </ol>
+</div>
+
+<div class="card pink">
+  <h4>Meta / Instagram</h4>
+  <ol>
+    <li>Ve a <code>developers.facebook.com</code></li>
+    <li>Crea una app de negocio</li>
+    <li>Obtiene un access token con permisos: <code>instagram_basic</code>, <code>instagram_content_publish</code></li>
+    <li>Obt&eacute;n tu Instagram Account ID desde el Graph API Explorer</li>
+  </ol>
+</div>
+
+<div class="card" style="border-left:3px solid var(--text-dim)">
+  <h4>Imgur</h4>
+  <ol>
+    <li>Reg&iacute;strate en <code>api.imgur.com</code></li>
+    <li>Registra una aplicaci&oacute;n y copia el Client ID</li>
+    <li>Se usa para hostear temporalmente las im&aacute;genes antes de publicarlas en Instagram</li>
+  </ol>
+</div>
+
+<div class="card" style="border-left:3px solid var(--accent2)">
+  <h4>Google AI &mdash; Imagen 3 <span class="tag green">NUEVO (opcional)</span></h4>
+  <ol>
+    <li>Ve a <code>aistudio.google.com</code> y obt&eacute;n una API key</li>
+    <li>Configura <code>GOOGLE_AI_API_KEY</code> en <code>.env</code></li>
+    <li>Genera fondos AI para el cover slide del carrusel</li>
+    <li><strong>Sin API key:</strong> el bot usa degradados de Pillow como siempre (fallback autom&aacute;tico)</li>
+  </ol>
+</div>
+
+<h3>Paso 5 &mdash; Verificar</h3>
+<pre><code># Ejecutar en modo test (no usa APIs reales)
+python main_pipeline.py --test</code></pre>
+
+
+<!-- ─────────────────────────────────────────────────────────────
+     05. USO (CLI)
+     ───────────────────────────────────────────────────────────── -->
+<h2 id="uso"><span class="badge" style="background:rgba(0,200,255,.15);color:var(--accent)">05</span> Uso (CLI)</h2>
+
+<h3>Comandos b&aacute;sicos</h3>
+<table>
+  <thead><tr><th>Comando</th><th>Descripci&oacute;n</th></tr></thead>
+  <tbody>
+    <tr><td><code>python main_pipeline.py</code></td><td>Ejecuci&oacute;n completa: research &rarr; design &rarr; publish</td></tr>
+    <tr><td><code>python main_pipeline.py --dry-run</code></td><td>Todo excepto publicar en Instagram</td></tr>
+    <tr><td><code>python main_pipeline.py --test</code></td><td>Usa datos de ejemplo (sin llamadas a APIs)</td></tr>
+    <tr><td><code>python main_pipeline.py --verbose</code></td><td>Logging detallado (debug)</td></tr>
+  </tbody>
+</table>
+
+<h3>Ejecuci&oacute;n por pasos</h3>
+<table>
+  <thead><tr><th>Comando</th><th>Paso</th><th>Resultado</th></tr></thead>
+  <tbody>
+    <tr><td><code>--step research</code></td><td>Solo investigaci&oacute;n</td><td>Guarda en <code>data/last_topic.json</code></td></tr>
+    <tr><td><code>--step content</code></td><td>Solo generaci&oacute;n de contenido</td><td>Guarda en <code>data/last_content.json</code></td></tr>
+    <tr><td><code>--step design</code></td><td>Solo dise&ntilde;o del carrusel</td><td>Guarda PNGs en <code>output/</code></td></tr>
+  </tbody>
+</table>
+
+<h3>Selecci&oacute;n de template</h3>
+<table>
+  <thead><tr><th>Flag</th><th>Template</th><th>Colores</th></tr></thead>
+  <tbody>
+    <tr><td><code>--template 0</code></td><td>dark_blue</td><td><span class="tag" style="background:#193d6d;color:#00c8ff">Azul oscuro + cyan</span></td></tr>
+    <tr><td><code>--template 1</code></td><td>dark_purple</td><td><span class="tag" style="background:#4b1478;color:#c864ff">P&uacute;rpura + magenta</span></td></tr>
+    <tr><td><code>--template 2</code></td><td>dark_green</td><td><span class="tag" style="background:#0f503c;color:#00e696">Verde oscuro + mint</span></td></tr>
+    <tr><td><code>--template 3</code></td><td>midnight</td><td><span class="tag" style="background:#282846;color:#ffb432">Gris + naranja</span></td></tr>
+  </tbody>
+</table>
+
+<h3>Ejemplos combinados</h3>
+<pre><code># Test con template espec&iacute;fico
+python main_pipeline.py --test --template 2
+
+# Dry run con logging verbose
+python main_pipeline.py --dry-run -v
+
+# Solo research en modo test
+python main_pipeline.py --test --step research
+
+# Pipeline completo (publicaci&oacute;n real)
+python main_pipeline.py</code></pre>
+
+<div class="card accent">
+  <strong>--test</strong> usa un topic y contenido hardcodeados (lanzamiento de GPT-5). Ideal para probar el dise&ntilde;o visual sin gastar cr&eacute;ditos de API.<br><br>
+  <strong>--dry-run</strong> ejecuta todo el pipeline real (APIs incluidas) pero se detiene antes de publicar en Instagram.
+</div>
+
+
+<!-- ─────────────────────────────────────────────────────────────
+     06. TEMPLATES VISUALES
+     ───────────────────────────────────────────────────────────── -->
+<h2 id="templates"><span class="badge" style="background:rgba(192,132,252,.15);color:var(--accent2)">06</span> Templates visuales</h2>
+
+<p>El bot incluye 4 templates de color que rotan autom&aacute;ticamente. Cada uno define degradados de fondo, colores de texto, acentos y tama&ntilde;os de fuente.</p>
+
+<div class="templates-grid">
+  <!-- dark_blue -->
+  <div class="tpl-card">
+    <div class="tpl-preview" style="background:linear-gradient(to bottom,rgb(10,15,40),rgb(25,55,109))">
+      <div class="tpl-title" style="color:#fff">Headline</div>
+      <div class="tpl-accent" style="background:#00c8ff"></div>
+      <div class="tpl-body" style="color:rgb(220,225,240)">Body text preview</div>
+    </div>
+    <div class="tpl-info">
+      <strong>dark_blue <span class="tag blue">0</span></strong>
+      <span>Degradado navy &rarr; azul royal. Acento cyan. Ideal para contenido tech minimalista.</span>
+    </div>
+  </div>
+  <!-- dark_purple -->
+  <div class="tpl-card">
+    <div class="tpl-preview" style="background:linear-gradient(to bottom,rgb(20,5,35),rgb(75,20,120))">
+      <div class="tpl-title" style="color:#fff">Headline</div>
+      <div class="tpl-accent" style="background:#c864ff"></div>
+      <div class="tpl-body" style="color:rgb(230,220,245)">Body text preview</div>
+    </div>
+    <div class="tpl-info">
+      <strong>dark_purple <span class="tag pink">1</span></strong>
+      <span>Degradado p&uacute;rpura oscuro &rarr; violeta. Acento magenta. Para temas de innovaci&oacute;n y dise&ntilde;o.</span>
+    </div>
+  </div>
+  <!-- dark_green -->
+  <div class="tpl-card">
+    <div class="tpl-preview" style="background:linear-gradient(to bottom,rgb(5,20,15),rgb(15,80,60))">
+      <div class="tpl-title" style="color:#fff">Headline</div>
+      <div class="tpl-accent" style="background:#00e696"></div>
+      <div class="tpl-body" style="color:rgb(215,240,230)">Body text preview</div>
+    </div>
+    <div class="tpl-info">
+      <strong>dark_green <span class="tag green">2</span></strong>
+      <span>Degradado bosque &rarr; teal. Acento mint. Para temas de sostenibilidad y NLP.</span>
+    </div>
+  </div>
+  <!-- midnight -->
+  <div class="tpl-card">
+    <div class="tpl-preview" style="background:linear-gradient(to bottom,rgb(15,15,25),rgb(40,40,70))">
+      <div class="tpl-title" style="color:#fff">Headline</div>
+      <div class="tpl-accent" style="background:#ffb432"></div>
+      <div class="tpl-body" style="color:rgb(200,200,220)">Body text preview</div>
+    </div>
+    <div class="tpl-info">
+      <strong>midnight <span class="tag orange">3</span></strong>
+      <span>Degradado carb&oacute;n &rarr; pizarra. Acento naranja c&aacute;lido. Para seguridad y temas serios.</span>
+    </div>
+  </div>
+</div>
+
+<h3>Layout de un slide</h3>
+<pre><code>&#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;  1080px
+&#9474;                                  &#9474;
+&#9474;     T&Iacute;TULO DEL SLIDE              &#9474;  72pt (cover) / 48pt (content)
+&#9474;     &#9608;&#9608;&#9608; [l&iacute;nea de acento]          &#9474;
+&#9474;                                  &#9474;
+&#9474;     Texto del cuerpo con          &#9474;  38pt, interlineado 1.4x
+&#9474;     wrapping autom&aacute;tico y         &#9474;
+&#9474;     datos concretos.              &#9474;
+&#9474;                                  &#9474;
+&#9474;     &#9679; &#9679; &#9675; &#9675; &#9675; &#9675; &#9675; &#9675;              &#9474;  Indicador de progreso
+&#9474;                   @handle_tech   &#9474;  Watermark (80% opacidad)
+&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;  1350px</code></pre>
+
+<h3>Tama&ntilde;os de fuente por tipo de slide</h3>
+<table>
+  <thead><tr><th>Elemento</th><th>Tama&ntilde;o</th></tr></thead>
+  <tbody>
+    <tr><td>Cover &mdash; t&iacute;tulo</td><td>72pt</td></tr>
+    <tr><td>Cover &mdash; subt&iacute;tulo</td><td>36pt</td></tr>
+    <tr><td>Content &mdash; t&iacute;tulo</td><td>48pt</td></tr>
+    <tr><td>Content &mdash; cuerpo</td><td>38pt</td></tr>
+    <tr><td>Content &mdash; n&uacute;mero de slide</td><td>28pt</td></tr>
+    <tr><td>CTA &mdash; t&iacute;tulo</td><td>56pt</td></tr>
+    <tr><td>CTA &mdash; cuerpo</td><td>36pt</td></tr>
+    <tr><td>Watermark</td><td>24pt</td></tr>
+  </tbody>
+</table>
+
+
+<!-- ─────────────────────────────────────────────────────────────
+     07. ESTRATEGIA DE ENGAGEMENT
+     ───────────────────────────────────────────────────────────── -->
+<h2 id="engagement"><span class="badge" style="background:rgba(52,211,153,.15);color:var(--green)">07</span> Estrategia de engagement</h2>
+
+<h3>Hashtags</h3>
+<p>30 hashtags por post, distribuidos en 3 pools que se mezclan aleatoriamente para evitar shadowban:</p>
+
+<h4>Alta competencia (5 tags) &mdash; Alcance amplio</h4>
+<p>
+  <span class="tag red">#tecnologia</span>
+  <span class="tag red">#ia</span>
+  <span class="tag red">#tech</span>
+  <span class="tag red">#technology</span>
+  <span class="tag red">#innovation</span>
+</p>
+
+<h4>Media competencia (15 tags) &mdash; Equilibrio</h4>
+<p>
+  <span class="tag orange">#chatgpt</span>
+  <span class="tag orange">#openai</span>
+  <span class="tag orange">#machinelearning</span>
+  <span class="tag orange">#python</span>
+  <span class="tag orange">#datascience</span>
+  <span class="tag orange">#deeplearning</span>
+  <span class="tag orange">#robotics</span>
+  <span class="tag orange">#automation</span>
+  <span class="tag orange">#coding</span>
+  <span class="tag orange">#startups</span>
+  <span class="tag orange">#futuretech</span>
+  <span class="tag orange">#bigdata</span>
+  <span class="tag orange">#cybersecurity</span>
+  <span class="tag orange">#cloudcomputing</span>
+  <span class="tag orange">#programming</span>
+</p>
+
+<h4>Nicho espa&ntilde;ol (10 tags) &mdash; Audiencia espec&iacute;fica</h4>
+<p>
+  <span class="tag green">#iaenespañol</span>
+  <span class="tag green">#techlatam</span>
+  <span class="tag green">#noticiastech</span>
+  <span class="tag green">#learnai</span>
+  <span class="tag green">#techespañol</span>
+  <span class="tag green">#inteligenciaartificial</span>
+  <span class="tag green">#aprendetech</span>
+  <span class="tag green">#tecnologialatina</span>
+  <span class="tag green">#programacion</span>
+  <span class="tag green">#futurodigital</span>
+</p>
+
+<p>Adem&aacute;s, el content generator sugiere ~5 hashtags contextuales basados en el tema.</p>
+
+<h3>Horarios de publicaci&oacute;n</h3>
+<table>
+  <thead><tr><th>D&iacute;a</th><th>Hora</th><th>Tipo</th><th>Notas</th></tr></thead>
+  <tbody>
+    <tr><td>Lunes &ndash; Viernes</td><td>08:30</td><td><span class="tag blue">weekday_carousel</span></td><td>Pico de audiencia tech por la ma&ntilde;ana</td></tr>
+    <tr><td>Lunes &ndash; Viernes (alt)</td><td>18:30</td><td><span class="tag blue">weekday_evening</span></td><td>Disponible como horario alternativo</td></tr>
+    <tr><td>S&aacute;bado</td><td>10:00</td><td><span class="tag green">saturday_recap</span></td><td>Contenido m&aacute;s ligero</td></tr>
+    <tr><td>Domingo</td><td>&mdash;</td><td><span class="tag orange">sunday_rest</span></td><td>Sin publicaci&oacute;n (d&iacute;a de descanso)</td></tr>
+  </tbody>
+</table>
+<p>Timezone configurable en <code>.env</code> (por defecto: <code>Europe/Madrid</code>).</p>
+
+<h3>Estructura del caption</h3>
+<pre><code>[HOOK] &larr; Generado por OpenAI (300-500 chars)
+Texto atractivo que detiene el scroll...
+
+[CTA]
+&iquest;Ya conoc&iacute;as esta tecnolog&iacute;a? &#129300;
+
+&middot; &middot; &middot;
+
+#hashtag1 #hashtag2 ... (30 tags)</code></pre>
+
+<h4>Frases CTA (rotaci&oacute;n aleatoria)</h4>
+<ul>
+  <li>"Guarda este post para no olvidarlo &#128278;"</li>
+  <li>"Comparte con alguien que necesite saber esto &#128242;"</li>
+  <li>"&iquest;Qu&eacute; opinas? D&eacute;jalo en los comentarios &#128071;"</li>
+  <li>"S&iacute;gueme para m&aacute;s contenido de Tech e IA &#128640;"</li>
+  <li>"Dale like si aprendiste algo nuevo &#10084;&#65039;"</li>
+  <li>"Gu&aacute;rdalo y comp&aacute;rtelo con tu equipo &#128161;"</li>
+</ul>
+
+
+<!-- ─────────────────────────────────────────────────────────────
+     08. COSTES
+     ───────────────────────────────────────────────────────────── -->
+<h2 id="costes"><span class="badge" style="background:rgba(251,146,60,.15);color:var(--orange)">08</span> Costes mensuales estimados</h2>
+
+<p>Estimaci&oacute;n para <strong>30 posts al mes</strong> (1 post diario, excepto domingos):</p>
+
+<h3>Coste por ejecuci&oacute;n</h3>
+<table>
+  <thead><tr><th>Componente</th><th>Modelo</th><th>Coste/run</th></tr></thead>
+  <tbody>
+    <tr><td>Director: research prompt</td><td>GPT-4o</td><td>~$0.010</td></tr>
+    <tr><td>Director: content prompt</td><td>GPT-4o</td><td>~$0.008</td></tr>
+    <tr><td>Director: image prompt</td><td>GPT-4o</td><td>~$0.003</td></tr>
+    <tr><td>Research ranking</td><td>GPT-4o-mini</td><td>~$0.001</td></tr>
+    <tr><td>Content generation</td><td>GPT-4o-mini</td><td>~$0.001</td></tr>
+    <tr><td>Cover image</td><td>Gemini Imagen 3</td><td>~$0.040</td></tr>
+    <tr style="border-top:2px solid var(--accent)">
+      <td colspan="2" style="text-align:right;font-weight:700">Total por run</td>
+      <td><strong>~$0.06</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Coste mensual</h3>
+<table>
+  <thead><tr><th>Servicio</th><th>Tier</th><th>Uso / mes</th><th>Coste</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>OpenAI</strong> (GPT-4o + GPT-4o-mini)</td>
+      <td>Pay-as-you-go</td>
+      <td>Director (3 calls) + Research + Content &times; 30</td>
+      <td><strong>~$14.50</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Google AI</strong> (Imagen 3)</td>
+      <td>Pay-as-you-go</td>
+      <td>30 im&aacute;genes</td>
+      <td><strong>~$1.20</strong></td>
+    </tr>
+    <tr>
+      <td><strong>NewsAPI</strong></td>
+      <td>Free</td>
+      <td>30 requests (l&iacute;mite: 1.500)</td>
+      <td>$0</td>
+    </tr>
+    <tr>
+      <td><strong>Reddit API</strong> (PRAW)</td>
+      <td>Free</td>
+      <td>~1.200 requests</td>
+      <td>$0</td>
+    </tr>
+    <tr>
+      <td><strong>Google Trends</strong> (pytrends)</td>
+      <td>Free</td>
+      <td>30 requests</td>
+      <td>$0</td>
+    </tr>
+    <tr>
+      <td><strong>Instagram Graph API</strong></td>
+      <td>Free (business)</td>
+      <td>~210 calls (l&iacute;mite: 200/d&iacute;a)</td>
+      <td>$0</td>
+    </tr>
+    <tr>
+      <td><strong>Imgur</strong></td>
+      <td>Pro</td>
+      <td>240 im&aacute;genes (excede free tier)</td>
+      <td><strong>~$1.00</strong></td>
+    </tr>
+    <tr style="border-top:2px solid var(--accent)">
+      <td colspan="3" style="text-align:right;font-weight:700">Total estimado</td>
+      <td><strong style="color:var(--green)">~$16.70/mes</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="cost-total">~$16.70/mes</div>
+<p style="color:var(--text-dim);margin-top:4px">Para 30 posts mensuales con Prompt Director + Imagen 3 + todas las APIs activas.</p>
+
+<h3>Tips de optimizaci&oacute;n</h3>
+<ul>
+  <li><strong>Sin GOOGLE_AI_API_KEY:</strong> el bot usa degradados de Pillow y se ahorra ~$1.20/mes en Imagen 3.</li>
+  <li><strong>gpt-4o-mini</strong> es el modelo m&aacute;s econ&oacute;mico de OpenAI para salidas JSON estructuradas.</li>
+  <li><strong>Prompt Director:</strong> el coste extra de GPT-4o (~$0.63/mes) mejora significativamente la calidad de los prompts downstream.</li>
+  <li>El historial (<code>history.json</code>) evita repetir temas, ahorrando re-investigaciones.</li>
+  <li>Imgur puede reemplazarse por AWS S3 (~$0.50/mes para vol&uacute;menes peque&ntilde;os).</li>
+  <li>Ejecutar con cron job elimina la necesidad de un servidor siempre activo.</li>
+</ul>
+
+<h3>Escalabilidad</h3>
+<table>
+  <thead><tr><th>Escenario</th><th>Coste estimado</th></tr></thead>
+  <tbody>
+    <tr><td>1 cuenta, 1 post/d&iacute;a</td><td>~$16.70/mes</td></tr>
+    <tr><td>1 cuenta, 5 posts/d&iacute;a</td><td>~$60/mes</td></tr>
+    <tr><td>3 cuentas, 1 post/d&iacute;a cada una</td><td>~$55/mes</td></tr>
+  </tbody>
+</table>
+
+
+<!-- ─────────────────────────────────────────────────────────────
+     09. FAQ / TROUBLESHOOTING
+     ───────────────────────────────────────────────────────────── -->
+<h2 id="faq"><span class="badge" style="background:rgba(248,113,113,.15);color:var(--red)">09</span> FAQ / Troubleshooting</h2>
+
+<details>
+  <summary>El bot falla con &ldquo;OPENAI_API_KEY not set&rdquo;</summary>
+  <div class="faq-body">
+    Aseg&uacute;rate de que el archivo <code>.env</code> existe en la ra&iacute;z del proyecto y contiene <code>OPENAI_API_KEY=sk-...</code>. Verifica que est&aacute;s ejecutando desde el directorio correcto y que <code>python-dotenv</code> est&aacute; instalado (<code>pip install python-dotenv</code>).
+  </div>
+</details>
+
+<details>
+  <summary>Las im&aacute;genes se generan sin fuentes bonitas</summary>
+  <div class="faq-body">
+    El bot intenta cargar Inter o Montserrat desde <code>assets/fonts/</code>. Si no las encuentra, usa fuentes del sistema (Helvetica en macOS, DejaVuSans en Linux). Para mejores resultados, descarga Inter o Montserrat en formato TTF y col&oacute;calas en <code>assets/fonts/</code>.
+  </div>
+</details>
+
+<details>
+  <summary>&ldquo;NewsAPI returned 0 articles&rdquo;</summary>
+  <div class="faq-body">
+    El tier gratuito de NewsAPI tiene restricciones geogr&aacute;ficas y de rate. Verifica tu API key, y aseg&uacute;rate de no haber excedido las 1.500 requests mensuales. El bot usar&aacute; las otras fuentes (Reddit, RSS, Google Trends) como fallback.
+  </div>
+</details>
+
+<details>
+  <summary>Error al publicar: &ldquo;Invalid access token&rdquo;</summary>
+  <div class="faq-body">
+    Los tokens de Meta expiran peri&oacute;dicamente. Ve a <code>developers.facebook.com</code> &rarr; tu app &rarr; Graph API Explorer &rarr; genera un nuevo token con permisos <code>instagram_basic</code> e <code>instagram_content_publish</code>. Para tokens de larga duraci&oacute;n, intercambia el token de corta duraci&oacute;n por uno de 60 d&iacute;as usando la API de Meta.
+  </div>
+</details>
+
+<details>
+  <summary>Imgur: &ldquo;Rate limit exceeded&rdquo;</summary>
+  <div class="faq-body">
+    El tier gratuito de Imgur permite 50 im&aacute;genes/hora y ~150/mes. Si publicas frecuentemente, considera actualizar a Imgur Pro (~$1/mes) o reemplazar Imgur con un bucket de AWS S3 (requiere modificar <code>publisher.py</code>).
+  </div>
+</details>
+
+<details>
+  <summary>&iquest;C&oacute;mo automatizo el bot con cron?</summary>
+  <div class="faq-body">
+    A&ntilde;ade una l&iacute;nea a tu crontab para ejecutar el pipeline diariamente:<br><br>
+    <code>30 8 * * 1-6 cd /ruta/instagram-ai-bot && .venv/bin/python main_pipeline.py >> logs/cron.log 2>&1</code><br><br>
+    Esto ejecuta a las 8:30 de lunes a s&aacute;bado. Aseg&uacute;rate de usar la ruta absoluta al int&eacute;rprete de Python del venv.
+  </div>
+</details>
+
+<details>
+  <summary>&iquest;Puedo cambiar el idioma del contenido?</summary>
+  <div class="faq-body">
+    S&iacute;, pero requiere modificar los prompts en <code>modules/content_generator.py</code> y <code>modules/researcher.py</code>. Los prompts de OpenAI especifican expl&iacute;citamente &ldquo;espa&ntilde;ol&rdquo;. Tambi&eacute;n deber&iacute;as actualizar los pools de hashtags en <code>config/engagement.py</code>.
+  </div>
+</details>
+
+<details>
+  <summary>El carrusel se ve distinto en cada ejecuci&oacute;n</summary>
+  <div class="faq-body">
+    Es intencional. El sistema rota autom&aacute;ticamente entre los 4 templates de color para dar variedad visual al feed. Si quieres usar siempre el mismo, usa el flag <code>--template N</code> donde N es 0&ndash;3.
+  </div>
+</details>
+
+<details>
+  <summary>&iquest;C&oacute;mo a&ntilde;ado un nuevo template de color?</summary>
+  <div class="faq-body">
+    Edita <code>config/templates.py</code> y a&ntilde;ade un nuevo diccionario al array <code>TEMPLATES</code> con las claves: <code>name</code>, <code>color_top</code>, <code>color_bottom</code>, <code>title_color</code>, <code>body_color</code>, <code>accent_color</code>, y los tama&ntilde;os de fuente. El bot lo incluir&aacute; autom&aacute;ticamente en la rotaci&oacute;n.
+  </div>
+</details>
+
+<details>
+  <summary>Se repiten los mismos temas</summary>
+  <div class="faq-body">
+    El researcher verifica contra <code>data/history.json</code> para evitar duplicados. Si el archivo se corrompe o se borra, los temas podr&iacute;an repetirse. Verifica que <code>data/history.json</code> existe y es un JSON v&aacute;lido. Si el problema persiste, puede ser que las fuentes de noticias est&eacute;n dominadas por un solo tema; intenta ampliar las fuentes RSS en <code>modules/researcher.py</code>.
+  </div>
+</details>
+
+
+<!-- ── FOOTER ─────────────────────────────────────────────────── -->
+<div style="margin-top:80px;padding-top:24px;border-top:1px solid var(--border);color:var(--text-dim);font-size:13px">
+  <p>Instagram AI Bot &mdash; Documentaci&oacute;n generada para referencia interna.</p>
+  <p style="margin-top:4px">Python 3.10+ &bull; Pillow &bull; OpenAI (GPT-4o + GPT-4o-mini) &bull; Google Gemini Imagen 3 &bull; Instagram Graph API v21.0</p>
+</div>
+
+</main>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     JAVASCRIPT &mdash; Navegaci&oacute;n
+     ═══════════════════════════════════════════════════════════════ -->
+<script>
+// Mobile nav toggle
+function toggleNav(){
+  document.getElementById('nav').classList.toggle('open');
+  document.getElementById('overlay').classList.toggle('open');
+}
+function closeNav(){
+  document.getElementById('nav').classList.remove('open');
+  document.getElementById('overlay').classList.remove('open');
+}
+
+// Active link highlighting on scroll
+(function(){
+  const links=document.querySelectorAll('nav a[href^="#"]');
+  const sections=[];
+  links.forEach(a=>{
+    const id=a.getAttribute('href').slice(1);
+    const el=document.getElementById(id);
+    if(el) sections.push({el,a});
+  });
+  function update(){
+    let current=sections[0];
+    for(const s of sections){
+      if(s.el.getBoundingClientRect().top<=120) current=s;
+    }
+    links.forEach(a=>a.classList.remove('active'));
+    if(current) current.a.classList.add('active');
+  }
+  window.addEventListener('scroll',update,{passive:true});
+  update();
+})();
+</script>
+
+</body>
+</html>

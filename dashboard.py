@@ -46,6 +46,19 @@ def _require_api_token():
         or request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         or (request.args.get("token") or "").strip()
     )
+
+    # Allow same-origin browser calls from the dashboard UI without forcing
+    # users to manually inject headers in the web app.
+    host = (request.host_url or "").rstrip("/")
+    origin = (request.headers.get("Origin") or "").rstrip("/")
+    referer = request.headers.get("Referer") or ""
+    same_origin = bool(
+        (origin and origin == host)
+        or (host and referer.startswith(host + "/"))
+    )
+    if same_origin:
+        return None
+
     if provided != _DASHBOARD_API_TOKEN:
         return jsonify({"error": "Unauthorized"}), 401
     return None
@@ -1379,6 +1392,30 @@ body{
 </div>
 
 <script>
+const DASHBOARD_API_TOKEN = __DASHBOARD_API_TOKEN_JSON__;
+
+// Auto-attach API token for mutating dashboard API calls in cloud mode.
+if (DASHBOARD_API_TOKEN) {
+  const _origFetch = window.fetch.bind(window);
+  window.fetch = function(input, init = {}) {
+    const url = (typeof input === 'string')
+      ? input
+      : ((input && input.url) ? input.url : '');
+    const method = ((init && init.method) || 'GET').toUpperCase();
+    const isApiCall = url.startsWith('/api/');
+
+    if (!isApiCall || method === 'GET') {
+      return _origFetch(input, init);
+    }
+
+    const headers = new Headers(init.headers || {});
+    if (!headers.has('X-API-Token')) {
+      headers.set('X-API-Token', DASHBOARD_API_TOKEN);
+    }
+    return _origFetch(input, { ...init, headers });
+  };
+}
+
 let selectedTemplate = null;
 let polling = null;
 
@@ -2014,7 +2051,10 @@ fetch('/api/status').then(r=>r.json()).then(d=>{
 
 @app.route("/")
 def dashboard():
-    return DASHBOARD_HTML
+    return DASHBOARD_HTML.replace(
+        "__DASHBOARD_API_TOKEN_JSON__",
+        json.dumps(_DASHBOARD_API_TOKEN),
+    )
 
 
 @app.route("/docs")

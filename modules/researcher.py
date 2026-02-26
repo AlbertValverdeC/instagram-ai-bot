@@ -284,12 +284,65 @@ _TECH_SIGNAL_TOKENS = {
 }
 
 
+_focus_topic_cache: dict[str, tuple[str, list[str]]] = {}
+
+
+def _llm_interpret_focus_topic(raw_input: str) -> tuple[str, list[str]]:
+    """
+    Use a fast LLM to interpret user input and return (canonical_name, search_variants).
+
+    Handles misspellings, nicknames, informal references, and non-English input.
+    Returns the corrected name and 3-5 search query variants for better recall.
+    """
+    cache_key = raw_input.strip().lower()
+    if cache_key in _focus_topic_cache:
+        return _focus_topic_cache[cache_key]
+
+    if not OPENAI_API_KEY:
+        return raw_input.strip(), []
+
+    try:
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": (
+                f"The user typed this as a news search topic: \"{raw_input}\"\n\n"
+                "Your task:\n"
+                "1. Figure out what they mean (fix typos, expand nicknames, translate if needed)\n"
+                "2. Return the canonical/correct name or topic\n"
+                "3. Return 3-5 search query variants that would find recent news about this\n\n"
+                "Reply ONLY with JSON, no explanation:\n"
+                '{"canonical": "correct name", "queries": ["variant 1", "variant 2", ...]}'
+            )}],
+            temperature=0.0,
+            max_tokens=200,
+        )
+        text = response.choices[0].message.content.strip()
+        # Strip markdown code fences if present
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text)
+            text = re.sub(r"\s*```$", "", text)
+        data = json.loads(text)
+        canonical = str(data.get("canonical", raw_input)).strip()
+        queries = [str(q).strip() for q in data.get("queries", []) if str(q).strip()]
+        result = (canonical or raw_input.strip(), queries[:5])
+        _focus_topic_cache[cache_key] = result
+        logger.info(f"LLM interpreted focus topic: '{raw_input}' → '{result[0]}' with {len(result[1])} query variants")
+        return result
+    except Exception as e:
+        logger.warning(f"LLM focus topic interpretation failed: {e}. Using raw input.")
+        return raw_input.strip(), []
+
+
 def _normalize_focus_topic(focus_topic: str | None) -> str | None:
-    """Normalize optional focus topic from user input."""
+    """Normalize optional focus topic from user input via LLM interpretation."""
     if not focus_topic:
         return None
     focus_topic = focus_topic.strip()
-    return focus_topic or None
+    if not focus_topic:
+        return None
+    canonical, _ = _llm_interpret_focus_topic(focus_topic)
+    return canonical or focus_topic
 
 
 def _matches_focus_topic(text: str, focus_topic: str | None) -> bool:
@@ -415,10 +468,18 @@ def _is_blocked_domain(domain: str) -> bool:
 
 
 def _build_focus_queries(focus_topic: str | None, query_hints: list[str] | None = None) -> list[str]:
-    """Build query variants to improve recall while staying on-topic."""
+    """Build query variants to improve recall while staying on-topic.
+
+    Uses LLM-generated search variants when available for better recall on
+    misspelled, informal, or nickname-based user input.
+    """
+    raw_input = (focus_topic or "").strip()
     focus_topic = _normalize_focus_topic(focus_topic)
     if not focus_topic:
         return []
+
+    # Get LLM-generated query variants (cached from _normalize_focus_topic call)
+    _, llm_queries = _llm_interpret_focus_topic(raw_input) if raw_input else (None, [])
 
     focus_tokens = _tokenize(focus_topic)
     candidates: list[tuple[float, str]] = [
@@ -426,6 +487,11 @@ def _build_focus_queries(focus_topic: str | None, query_hints: list[str] | None 
         (9.0, f"\"{focus_topic}\""),
         (8.0, f"{focus_topic} última hora"),
     ]
+
+    # Add LLM-suggested queries with high priority
+    for i, llm_q in enumerate(llm_queries):
+        if llm_q.lower() != focus_topic.lower():
+            candidates.append((9.5 - i * 0.3, llm_q))
 
     for hint in query_hints or []:
         clean = (hint or "").strip()

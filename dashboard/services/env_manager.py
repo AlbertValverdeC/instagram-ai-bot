@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import os
+
 from dashboard.config import ENV_FILE
 
 
 def read_env() -> dict:
-    """Read .env file and return key-value dict."""
+    """Read .env file and return key-value dict, falling back to os.environ.
+
+    In Cloud Run there is no .env file — secrets are set as environment
+    variables directly, so we merge both sources (file takes precedence).
+    """
     env = {}
+    # First, pick up any real environment variables
+    env.update(os.environ)
+    # Then overlay with .env file values (if present)
     if ENV_FILE.exists():
         for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
             line = line.strip()

@@ -55,7 +55,7 @@ SOURCE_URL_LIMIT = 3
 MAX_NEWS_QUERIES = 6
 MAX_NEWS_PER_QUERY = 20
 TAVILY_SEARCH_URL = "https://api.tavily.com/search"
-TAVILY_MAX_QUERIES = 5
+TAVILY_MAX_QUERIES = 7
 TAVILY_TOTAL_RESULTS = 40
 
 # Curated domain quality priors for ranking and filtering.
@@ -541,16 +541,71 @@ def _resolve_research_backend() -> str:
 
 
 def _build_tavily_queries(focus_topic: str | None, trends: list[str] | None = None) -> list[str]:
-    """Build Tavily queries: focused variants or broad tech radar queries."""
+    """Build Tavily queries: focused variants or broad tech radar queries.
+
+    In generic mode, queries rotate by day-of-week and include today's date
+    so Tavily returns fresh results instead of caching the same set.
+    """
     focus_topic = _normalize_focus_topic(focus_topic)
     if focus_topic:
         return _build_focus_queries(focus_topic, query_hints=trends)[:TAVILY_MAX_QUERIES]
 
-    candidates: list[str] = [
-        "última hora tecnología inteligencia artificial apps gadgets",
-        "tendencias tecnología hoy españa inteligencia artificial",
-        "breaking technology news today ai apps gadgets",
+    now = datetime.now(timezone.utc)
+    today_str = now.strftime("%Y-%m-%d")
+    day_of_week = now.weekday()  # 0=Mon ... 6=Sun
+
+    # Rotating category pools — pick different angles each day
+    _QUERY_POOLS = [
+        # Pool 0 (Mon): AI & LLM focus
+        [
+            f"noticias inteligencia artificial hoy {today_str}",
+            f"AI news today {today_str}",
+            "últimos lanzamientos modelos IA LLM GPT Claude Gemini",
+        ],
+        # Pool 1 (Tue): gadgets & hardware
+        [
+            f"últimas noticias tecnología gadgets {today_str}",
+            f"tech gadgets launches news today {today_str}",
+            "nuevos dispositivos smartphones wearables lanzamientos",
+        ],
+        # Pool 2 (Wed): startups & business
+        [
+            f"noticias startups tecnología {today_str}",
+            f"tech startup funding news {today_str}",
+            "empresas tecnología inversión rondas adquisiciones",
+        ],
+        # Pool 3 (Thu): cybersecurity & privacy
+        [
+            f"noticias ciberseguridad privacidad datos {today_str}",
+            f"cybersecurity data breach news {today_str}",
+            "vulnerabilidades hacking seguridad digital",
+        ],
+        # Pool 4 (Fri): apps & software
+        [
+            f"nuevas apps software actualizaciones {today_str}",
+            f"new apps software updates trending {today_str}",
+            "aplicaciones populares actualizaciones plataformas",
+        ],
+        # Pool 5 (Sat): science & innovation
+        [
+            f"avances ciencia tecnología innovación {today_str}",
+            f"science technology breakthrough news {today_str}",
+            "descubrimientos científicos robótica computación cuántica",
+        ],
+        # Pool 6 (Sun): big tech & trends
+        [
+            f"noticias Google Apple Meta Microsoft {today_str}",
+            f"big tech news FAANG today {today_str}",
+            "tendencias tecnológicas semana análisis",
+        ],
     ]
+
+    # Always include a broad "catch-all" query with today's date
+    candidates: list[str] = [
+        f"breaking technology AI news {today_str}",
+    ]
+    # Add day-specific queries
+    candidates.extend(_QUERY_POOLS[day_of_week])
 
     for trend in trends or []:
         hint = (trend or "").strip()
@@ -1980,6 +2035,12 @@ def _find_trending_topic_legacy(focus_topic: str | None = None) -> dict:
         logger.info(f"Research focus topic: {focus_topic}")
     past_topics = _get_past_topics()
 
+    # Also include recently proposed (but not published) topics to avoid repeats
+    recently_proposed = _get_recently_proposed_topics()
+    if recently_proposed:
+        past_topics = past_topics | recently_proposed
+        logger.info(f"Added {len(recently_proposed)} recently proposed topics to avoid list")
+
     # Fetch from all sources in parallel
     all_articles = []
     trends = []
@@ -2090,12 +2151,36 @@ def _find_trending_topic_legacy(focus_topic: str | None = None) -> dict:
     return topic
 
 
+def _get_recently_proposed_topics() -> set[str]:
+    """Load topics from last_topic.json to avoid re-suggesting recent proposals."""
+    recent = set()
+    last_topic_file = DATA_DIR / "last_topic.json"
+    if last_topic_file.exists():
+        try:
+            with open(last_topic_file) as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                topic = data.get("topic", "").lower().strip()
+                topic_en = data.get("topic_en", "").lower().strip()
+                if topic:
+                    recent.add(topic)
+                if topic_en:
+                    recent.add(topic_en)
+        except Exception as e:
+            logger.warning(f"Could not load last_topic.json: {e}")
+    return recent
+
+
 def _find_trending_topic_tavily(focus_topic: str | None = None) -> dict:
     """
-    Simplified research path:
-    - Tavily as main source
-    - Google Trends as trend signal
-    - Google News RSS as resilient fallback
+    Research path with Tavily as primary + parallel secondary sources for diversity.
+
+    Sources used:
+    - Tavily (primary search)
+    - Google Trends (trend signal + query expansion)
+    - Google News sections (always, for broad coverage)
+    - Google News RSS search (when focused)
+    - NewsAPI (if key available, for additional diversity)
     """
     focus_topic = _normalize_focus_topic(focus_topic)
     logger.info("Starting research phase...")
@@ -2104,28 +2189,54 @@ def _find_trending_topic_tavily(focus_topic: str | None = None) -> dict:
         logger.info(f"Research focus topic: {focus_topic}")
     past_topics = _get_past_topics()
 
-    trends = fetch_google_trends(focus_topic)
+    # Also include recently proposed (but not published) topics to avoid repeats
+    recently_proposed = _get_recently_proposed_topics()
+    if recently_proposed:
+        past_topics = past_topics | recently_proposed
+        logger.info(f"Added {len(recently_proposed)} recently proposed topics to avoid list")
 
-    all_articles = fetch_tavily_news(
-        focus_topic=focus_topic,
-        query_hints=trends[:15] if trends else None,
-    )
+    # Fetch from multiple sources in parallel for diversity
+    all_articles = []
+    trends = []
 
-    fallback_articles = []
-    if focus_topic:
-        fallback_articles.extend(fetch_google_news_rss(focus_topic, query_hints=trends[:15] if trends else None))
-        if not fallback_articles:
-            fallback_articles.extend(fetch_google_news_sections(focus_topic))
-    else:
-        fallback_articles.extend(fetch_google_news_sections())
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {
+            executor.submit(fetch_tavily_news, focus_topic, None): "tavily",
+            executor.submit(fetch_google_trends, focus_topic): "trends",
+            executor.submit(fetch_google_news_sections, focus_topic): "google_news_sections",
+            executor.submit(fetch_newsapi, focus_topic): "newsapi",
+        }
 
-    if len(all_articles) < MIN_RECENT_ARTICLES and fallback_articles:
-        all_articles.extend(fallback_articles)
-        logger.info(
-            "Google News fallback added %s articles (total before dedupe: %s)",
-            len(fallback_articles),
-            len(all_articles),
-        )
+        for future in as_completed(futures):
+            source = futures[future]
+            try:
+                result = future.result()
+                if source == "trends":
+                    trends = result
+                else:
+                    all_articles.extend(result)
+            except Exception as e:
+                logger.error(f"Error fetching {source}: {e}")
+
+    # Second pass: use Trends for query expansion via Google News RSS
+    if trends and focus_topic:
+        try:
+            expanded = fetch_google_news_rss(focus_topic, query_hints=trends[:15])
+            if expanded:
+                all_articles.extend(expanded)
+                logger.info(f"Trend-expanded Google News RSS added {len(expanded)} articles")
+        except Exception as e:
+            logger.error(f"Trend-expanded Google News RSS failed: {e}")
+    elif trends:
+        # Generic mode: search Google News RSS for top trend terms
+        try:
+            for trend in trends[:5]:
+                expanded = fetch_google_news_rss(trend)
+                if expanded:
+                    all_articles.extend(expanded)
+            logger.info(f"Trend-based Google News RSS added articles for {min(5, len(trends))} trends")
+        except Exception as e:
+            logger.error(f"Trend-based Google News RSS failed: {e}")
 
     all_articles = _dedupe_articles(all_articles)
     all_articles = _strict_focus_filter(all_articles, focus_topic)

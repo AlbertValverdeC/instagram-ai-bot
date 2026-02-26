@@ -137,7 +137,10 @@ REGLAS DE SEGURIDAD (OBLIGATORIAS):
 - NUNCA nombres personas reales (no "Elon Musk", "Tim Cook", etc.)
 - NUNCA referencias logos de marca ni diseños registrados
 - Usa descripciones genéricas: "un gamer", "una ejecutiva tech", "un smartphone"
-- NO texto, letras, números ni palabras dentro de la imagen
+
+REGLA ABSOLUTA — SIN TEXTO EN LA IMAGEN:
+- La imagen generada NO debe contener NINGÚN texto, letra, número, palabra, marca de agua, etiqueta ni firma.
+- Termina tu prompt con: "Sin texto, sin letras, sin palabras, sin números en ninguna parte de la imagen."
 
 Escribe un prompt corto (2-3 frases, máximo 100 palabras).
 Escribe SOLO el prompt de generación de imagen. Sin explicación."""
@@ -176,7 +179,12 @@ STYLE:
 - Dramatic cinematic lighting, dark moody tones with neon/teal accents
 - Photorealistic quality, shallow depth of field
 - Subject in upper half of frame, bottom can be dark/empty (text goes there)
-- NO text, letters, numbers, or words in the image
+- Portrait orientation (3:4 aspect ratio), optimized for Instagram carousel
+
+ABSOLUTE RULE — NO TEXT IN THE IMAGE:
+- The generated image must contain ZERO text, letters, numbers, words, watermarks, labels, or captions.
+- Do NOT include any text in your prompt. If you mention a logo, describe it visually (shape, colors) but NEVER ask for text on it.
+- End your prompt with: "No text, no letters, no words, no numbers anywhere in the image."
 
 Write a short prompt (2-3 sentences, max 100 words).
 Write ONLY the image generation prompt. No explanation."""

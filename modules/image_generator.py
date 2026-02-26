@@ -298,17 +298,27 @@ def _get_xai_client():
         return None
 
 
+_NO_TEXT_SUFFIX = (
+    " CRITICAL: The image must contain absolutely NO text, NO letters, NO words, "
+    "NO numbers, NO watermarks, NO labels, NO captions, NO signatures anywhere in the image."
+)
+
+
 def _generate_with_xai(prompt: str):
     """Call xAI Grok image API and return PIL Image or None."""
     client = _get_xai_client()
     if client is None:
         return None
 
+    # Append hard no-text constraint to every prompt
+    safe_prompt = prompt.rstrip() + _NO_TEXT_SUFFIX
+
     response = client.images.generate(
         model=XAI_IMAGE_MODEL,
-        prompt=prompt,
+        prompt=safe_prompt,
         n=1,
         response_format="b64_json",
+        extra_body={"aspect_ratio": "3:4"},
     )
 
     if not response.data:

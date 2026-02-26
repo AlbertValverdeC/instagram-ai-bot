@@ -620,47 +620,81 @@ def _find_recent_published_media_by_caption(
 
 
 def _publish_container(container_id: str, *, expected_caption: str | None = None) -> str:
-    """Publish a media container. Returns the published media ID."""
-    # Wait for container to be ready.
+    """Publish a media container. Returns the published media ID.
+
+    Uses its own retry loop (not _graph_post retries) so that after each
+    ambiguous failure (rate-limit / fatal) it can check whether Instagram
+    actually published the post before retrying the POST call.
+    """
     _wait_container_ready(container_id, kind="carousel", max_attempts=12, sleep_seconds=5.0)
 
-    try:
-        payload = _graph_post(
-            f"{INSTAGRAM_ACCOUNT_ID}/media_publish",
-            data={"creation_id": container_id, "access_token": META_ACCESS_TOKEN},
-            retries=8,
-        )
-        media_id = _extract_meta_id(payload, context="media_publish")
-        logger.info(f"Published! Media ID: {media_id}")
-        return media_id
-    except Exception as exc:
-        err_text = str(exc)
-        if expected_caption and _looks_like_ambiguous_publish_failure(err_text):
-            try:
-                recovered = _find_recent_published_media_by_caption(
-                    expected_caption=expected_caption,
-                    expected_media_type="CAROUSEL_ALBUM",
-                    lookback_minutes=180,
-                    limit=60,
-                )
-            except Exception as recover_exc:
-                logger.warning(
-                    "Publish fallback lookup failed after media_publish error: %s",
-                    recover_exc,
-                )
-                recovered = None
+    max_attempts = 6
+    last_exc: Exception | None = None
 
-            if recovered:
-                logger.warning(
-                    "media_publish returned error but matching IG post exists; "
-                    "using recovered media_id=%s (container=%s, permalink=%s, timestamp=%s)",
-                    recovered["id"],
-                    container_id,
-                    recovered.get("permalink") or "-",
-                    recovered.get("timestamp") or "-",
-                )
-                return recovered["id"]
-        raise
+    for attempt in range(1, max_attempts + 1):
+        # ── Try the publish call (single attempt, no internal retries) ────
+        try:
+            payload = _graph_post(
+                f"{INSTAGRAM_ACCOUNT_ID}/media_publish",
+                data={"creation_id": container_id, "access_token": META_ACCESS_TOKEN},
+                retries=0,  # we handle retries here
+            )
+            media_id = _extract_meta_id(payload, context="media_publish")
+            logger.info("Published! Media ID: %s", media_id)
+            return media_id
+        except Exception as exc:
+            last_exc = exc
+            err_text = str(exc)
+            is_ambiguous = _looks_like_ambiguous_publish_failure(err_text)
+
+            logger.warning(
+                "media_publish attempt %d/%d failed: %s (ambiguous=%s)",
+                attempt, max_attempts, err_text, is_ambiguous,
+            )
+
+            # ── If this looks like a rate-limit / phantom-fail, check IG ──
+            if is_ambiguous and expected_caption:
+                # Wait a moment for IG to finalize before checking
+                time.sleep(8)
+                try:
+                    recovered = _find_recent_published_media_by_caption(
+                        expected_caption=expected_caption,
+                        expected_media_type="CAROUSEL_ALBUM",
+                        lookback_minutes=30,
+                        limit=20,
+                    )
+                except Exception as recover_exc:
+                    logger.warning(
+                        "Reconciliation lookup failed: %s", recover_exc,
+                    )
+                    recovered = None
+
+                if recovered:
+                    logger.warning(
+                        "media_publish returned error but post IS live on IG! "
+                        "Recovered media_id=%s (container=%s, permalink=%s)",
+                        recovered["id"],
+                        container_id,
+                        recovered.get("permalink") or "-",
+                    )
+                    return recovered["id"]
+
+            # ── If not the last attempt, back off before retrying ─────────
+            if attempt < max_attempts:
+                if is_ambiguous:
+                    backoff = min(30.0 * attempt, 120.0)
+                else:
+                    backoff = min(5.0 * attempt, 30.0)
+                logger.info("Publish retry backoff: sleeping %.1fs", backoff)
+                time.sleep(backoff)
+            # Non-ambiguous, non-transient errors: stop retrying
+            elif not is_ambiguous:
+                break
+
+    raise RuntimeError(
+        f"media_publish failed after {max_attempts} attempts "
+        f"(container={container_id}): {last_exc}"
+    )
 
 
 def publish(image_paths: list[Path], content: dict, strategy: dict) -> str:

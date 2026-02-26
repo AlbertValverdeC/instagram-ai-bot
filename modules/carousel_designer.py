@@ -783,40 +783,34 @@ def _create_cover_slide(
     _draw_slide_counter(draw, 1, total_slides)
     _draw_brand_logo_badge(img, draw, template)
 
-    # ── Fixed layout constants ──────────────────────────────────────────────
+    # ── Layout constants ────────────────────────────────────────────────────
     px = LAYOUT["padding_x"]
     max_w = SLIDE_WIDTH - 2 * px  # 920px
 
     PREFERRED_TITLE_SIZE = FONT_SIZES["cover_title"]  # 88pt preferred
-    MIN_TITLE_SIZE = 62                                # absolute minimum
+    MIN_TITLE_SIZE = 48                                # go small enough to avoid "..."
     TITLE_SIZE_STEP = 4                                # decrease in steps
-    SUBTITLE_SIZE = 44                                 # fixed — never changes
-    TITLE_GAP = 20                                     # gap between title bottom and subtitle top
-    BLOCK_Y = int(SLIDE_HEIGHT * 0.58)                 # fixed anchor — never moves
+    SUBTITLE_SIZE = 44                                 # fixed
+    TITLE_GAP = 20                                     # gap title→subtitle
+    PREFERRED_BLOCK_Y = int(SLIDE_HEIGHT * 0.58)       # preferred start (short titles)
+    MIN_BLOCK_Y = int(SLIDE_HEIGHT * 0.44)             # earliest allowed start (long titles)
     CTA_Y = int(SLIDE_HEIGHT * 0.945)                  # fixed CTA position
-    # Reserve space for subtitle (1 line) + gap + margin above CTA
+    # Reserve for subtitle (1 line) + gap + margin above CTA
     SUBTITLE_RESERVE = SUBTITLE_SIZE + TITLE_GAP + 40
 
     title_text = slide.get("title", "").upper()
     subtitle_text = (slide.get("subtitle", "") or "").upper()
 
-    # ── Title: find the largest font size that fits above the CTA zone ─────
-    # The title must end above (CTA_Y - SUBTITLE_RESERVE) so that the
-    # subtitle and CTA still have room.
+    # ── Title: find font size + block_y that fits without truncation ───────
     title_max_bottom = CTA_Y - SUBTITLE_RESERVE
 
-    title_size = PREFERRED_TITLE_SIZE
-    title_font = _get_font(title_size, bold=True)
-
-    # Dry-run: estimate title height without drawing
-    def _estimate_title_bottom(font_size: int) -> int:
-        """Return estimated Y after drawing title at given font size."""
+    def _count_title_lines(font_size: int) -> int:
+        """Count how many lines the title wraps to at a given font size."""
         f = _get_font(font_size, bold=True)
-        _, step = _line_metrics(draw, f, 1.15)
         clean = re.sub(r'\*\*(.+?)\*\*', r'\1', title_text)
         words = clean.split()
         if not words:
-            return BLOCK_Y
+            return 0
         space_w = draw.textbbox((0, 0), " ", font=f)[2]
         n_lines = 1
         cur_w = 0
@@ -828,34 +822,36 @@ def _create_cover_slide(
                 cur_w = ww
             else:
                 cur_w += needed
-        return BLOCK_Y + n_lines * step
+        return n_lines
 
-    # Shrink title font only when absolutely necessary
+    def _title_height(font_size: int) -> int:
+        f = _get_font(font_size, bold=True)
+        _, step = _line_metrics(draw, f, 1.15)
+        return _count_title_lines(font_size) * step
+
+    # Strategy: first try to fit at preferred size by moving block_y up,
+    # then shrink font if still doesn't fit even at MIN_BLOCK_Y.
+    title_size = PREFERRED_TITLE_SIZE
+    block_y = PREFERRED_BLOCK_Y
+
+    # Phase 1: try shrinking font (keeps block_y at preferred)
     while title_size > MIN_TITLE_SIZE:
-        if _estimate_title_bottom(title_size) <= title_max_bottom:
+        if block_y + _title_height(title_size) <= title_max_bottom:
+            break
+        # Before shrinking further, try moving block_y up
+        needed_y = title_max_bottom - _title_height(title_size)
+        if needed_y >= MIN_BLOCK_Y:
+            block_y = needed_y
             break
         title_size -= TITLE_SIZE_STEP
 
-    # If still overflows at min size, we'll truncate the title
-    if _estimate_title_bottom(title_size) > title_max_bottom:
-        # Truncate title text to fit at MIN_TITLE_SIZE
-        words = re.sub(r'\*\*(.+?)\*\*', r'\1', title_text).split()
-        lo, hi = 1, len(words)
-        while lo < hi:
-            mid = (lo + hi + 1) // 2
-            test_text = " ".join(words[:mid]) + "..."
-            title_text_bak = title_text
-            title_text = test_text
-            if _estimate_title_bottom(title_size) <= title_max_bottom:
-                lo = mid
-            else:
-                hi = mid - 1
-            title_text = title_text_bak
-        title_text = " ".join(words[:lo]) + "..."
+    # Phase 2: at final title_size, place block_y as low as possible
+    needed_y = title_max_bottom - _title_height(title_size)
+    block_y = max(MIN_BLOCK_Y, min(PREFERRED_BLOCK_Y, needed_y))
 
     title_font = _get_font(title_size, bold=True)
     title_end_y = _draw_text_centered_wrapped(
-        draw, title_text, BLOCK_Y, max_w,
+        draw, title_text, block_y, max_w,
         title_font, template["accent_color"], line_spacing=1.15,
     )
 
@@ -864,17 +860,25 @@ def _create_cover_slide(
         subtitle_font = _get_font(SUBTITLE_SIZE, bold=True)
         subtitle_y = title_end_y + TITLE_GAP
 
-        # Safety: if subtitle would collide with CTA, truncate it
+        # If subtitle collides with CTA, shrink subtitle font first, then truncate
         _, sub_step = _line_metrics(draw, subtitle_font, 1.20)
-        max_subtitle_lines = max(1, (CTA_Y - 30 - subtitle_y) // sub_step)
+        available_for_sub = CTA_Y - 30 - subtitle_y
+        max_subtitle_lines = max(1, available_for_sub // sub_step)
 
-        # Estimate how many lines the subtitle needs
         sub_lines_needed = _estimate_bicolor_line_count(draw, subtitle_text, max_w, subtitle_font)
 
+        # Try smaller subtitle font if it doesn't fit
+        sub_size = SUBTITLE_SIZE
+        while sub_lines_needed > max_subtitle_lines and sub_size > 28:
+            sub_size -= 4
+            subtitle_font = _get_font(sub_size, bold=True)
+            _, sub_step = _line_metrics(draw, subtitle_font, 1.20)
+            max_subtitle_lines = max(1, available_for_sub // sub_step)
+            sub_lines_needed = _estimate_bicolor_line_count(draw, subtitle_text, max_w, subtitle_font)
+
+        # Last resort: truncate subtitle if still overflows
         if sub_lines_needed > max_subtitle_lines:
-            # Truncate subtitle text to fit available lines
             words = re.sub(r'\*\*(.+?)\*\*', r'\1', subtitle_text).split()
-            # Binary search for max words that fit
             lo, hi = 1, len(words)
             while lo < hi:
                 mid = (lo + hi + 1) // 2

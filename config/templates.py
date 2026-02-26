@@ -58,6 +58,22 @@ TEMPLATES = [
         "slide_number_color": (255, 180, 50),
         "watermark_color": (255, 255, 255, 80),
     },
+    {
+        "name": "editorial_black",
+        "background": {
+            "type": "solid",
+            "color_top": (5, 5, 7),
+            "color_bottom": (5, 5, 7),
+        },
+        "title_color": (248, 248, 250),
+        "body_color": (236, 236, 238),
+        "accent_color": (78, 102, 255),
+        "slide_number_color": (212, 212, 216),
+        "watermark_color": (255, 255, 255, 70),
+        # Layout cues used by carousel_designer.py for a cleaner editorial look.
+        "style": "editorial_clean",
+        "content_image_card": True,
+    },
 ]
 
 # Font sizes (will be scaled relative to slide dimensions)
@@ -65,7 +81,7 @@ FONT_SIZES = {
     "cover_title": 88,           # large bold for viral "thumbnail" impact
     "cover_subtitle": 36,
     "slide_title": 48,
-    "slide_body": 38,
+    "slide_body": 34,
     "slide_number": 28,
     "cta_title": 56,
     "cta_body": 36,
@@ -85,5 +101,5 @@ LAYOUT = {
     "accent_line_y": 0.28,     # decorative accent line Y
     "accent_line_width": 120,  # accent line width in pixels
     "accent_line_height": 4,   # accent line height in pixels
-    "line_spacing": 1.5,       # line spacing multiplier
+    "line_spacing": 1.62,      # line spacing multiplier (improved readability)
 }

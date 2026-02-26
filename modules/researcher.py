@@ -2,6 +2,7 @@
 Research module: finds trending Tech/AI topics from multiple sources.
 
 Sources:
+  - Tavily News Search (optional primary backend)
   - NewsAPI (newsapi.org)
   - RSS feeds (TechCrunch, The Verge, Ars Technica, MIT Tech Review)
   - Reddit (r/artificial, r/technology, r/MachineLearning, r/ChatGPT)
@@ -36,8 +37,10 @@ from config.settings import (
     REDDIT_CLIENT_SECRET,
     REDDIT_SUBREDDITS,
     REDDIT_USER_AGENT,
+    RESEARCH_BACKEND,
     RESEARCH_CONFIG_FILE,
     RSS_FEEDS,
+    TAVILY_API_KEY,
     TRENDS_KEYWORDS,
 )
 from modules.prompt_loader import load_prompt
@@ -51,6 +54,9 @@ MIN_FOCUS_FRESH_ARTICLES = 6
 SOURCE_URL_LIMIT = 3
 MAX_NEWS_QUERIES = 6
 MAX_NEWS_PER_QUERY = 20
+TAVILY_SEARCH_URL = "https://api.tavily.com/search"
+TAVILY_MAX_QUERIES = 5
+TAVILY_TOTAL_RESULTS = 40
 
 # Curated domain quality priors for ranking and filtering.
 HIGH_TRUST_DOMAINS = {
@@ -242,6 +248,41 @@ _STORY_GENERIC_TOKENS = {
     "colombia",
 }
 
+_TECH_SIGNAL_TOKENS = {
+    "tecnologia",
+    "tecnologico",
+    "tecnologica",
+    "tech",
+    "software",
+    "hardware",
+    "startup",
+    "startups",
+    "app",
+    "apps",
+    "android",
+    "ios",
+    "iphone",
+    "pixel",
+    "galaxy",
+    "samsung",
+    "google",
+    "microsoft",
+    "apple",
+    "meta",
+    "openai",
+    "gemini",
+    "chatgpt",
+    "claude",
+    "copilot",
+    "robot",
+    "robots",
+    "ia",
+    "ai",
+    "llm",
+    "nube",
+    "cloud",
+}
+
 
 def _normalize_focus_topic(focus_topic: str | None) -> str | None:
     """Normalize optional focus topic from user input."""
@@ -388,7 +429,7 @@ def _build_focus_queries(focus_topic: str | None, query_hints: list[str] | None 
 
     for hint in query_hints or []:
         clean = (hint or "").strip()
-        if not clean:
+        if not clean or not _is_reasonable_query_hint(clean):
             continue
         hint_tokens = _tokenize(clean)
         overlap = len(focus_tokens.intersection(hint_tokens))
@@ -409,6 +450,60 @@ def _build_focus_queries(focus_topic: str | None, query_hints: list[str] | None 
         if len(ordered) >= MAX_NEWS_QUERIES:
             break
     return ordered
+
+
+def _resolve_research_backend() -> str:
+    """
+    Resolve research backend from env:
+    - auto   -> tavily if API key exists, otherwise legacy
+    - tavily -> tavily (fallback to legacy if key missing)
+    - legacy -> existing multi-source stack
+    """
+    backend = (RESEARCH_BACKEND or "auto").strip().lower()
+    if backend not in {"auto", "tavily", "legacy"}:
+        logger.warning("Unknown RESEARCH_BACKEND '%s'. Using 'auto'.", backend)
+        backend = "auto"
+
+    if backend == "auto":
+        return "tavily" if TAVILY_API_KEY else "legacy"
+
+    if backend == "tavily" and not TAVILY_API_KEY:
+        logger.warning("RESEARCH_BACKEND=tavily but TAVILY_API_KEY is missing. Falling back to legacy.")
+        return "legacy"
+
+    return backend
+
+
+def _build_tavily_queries(focus_topic: str | None, trends: list[str] | None = None) -> list[str]:
+    """Build Tavily queries: focused variants or broad tech radar queries."""
+    focus_topic = _normalize_focus_topic(focus_topic)
+    if focus_topic:
+        return _build_focus_queries(focus_topic, query_hints=trends)[:TAVILY_MAX_QUERIES]
+
+    candidates: list[str] = [
+        "última hora tecnología inteligencia artificial apps gadgets",
+        "tendencias tecnología hoy españa inteligencia artificial",
+        "breaking technology news today ai apps gadgets",
+    ]
+
+    for trend in trends or []:
+        hint = (trend or "").strip()
+        if not hint or not _is_reasonable_query_hint(hint):
+            continue
+        candidates.append(f"tecnología {hint}")
+        candidates.append(hint)
+
+    seen = set()
+    queries = []
+    for query in candidates:
+        key = _normalize_text(query)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        queries.append(query)
+        if len(queries) >= TAVILY_MAX_QUERIES:
+            break
+    return queries
 
 
 def _extract_headline_trends(headlines: list[str], limit: int = 20) -> list[str]:
@@ -574,6 +669,8 @@ def _article_hotness_score(article: dict, trends: list[str], focus_topic: str | 
     source = article.get("source", "")
     if source.startswith("google_news/"):
         score += 2.2
+    elif source.startswith("tavily/"):
+        score += 2.1
     elif source.startswith("newsapi/"):
         score += 2.0
     elif source.startswith("bing_news/"):
@@ -793,7 +890,7 @@ def _score_source_match(article: dict, topic_tokens: set[str], focus_tokens: set
         age_days = max(0, (datetime.now(timezone.utc) - published_dt).days)
         score += max(0.0, 4.0 - (age_days / 5.0))
 
-    if article.get("source", "").startswith(("newsapi/", "rss/", "google_news/")):
+    if article.get("source", "").startswith(("newsapi/", "rss/", "google_news/", "tavily/")):
         score += 0.5
 
     domain = article.get("domain") or _extract_domain(article.get("url", ""))
@@ -862,23 +959,67 @@ def _sanitize_research_text(text: str) -> str:
 
 
 def _clarify_key_point(point: str) -> str:
-    """
-    Remove vague jargon and enforce self-contained, understandable key points.
-    """
+    """Light cleanup for model-generated key points."""
     p = _sanitize_research_text(point)
     p = re.sub(r"[\"'“”‘’]+", "", p)
-
-    if re.search(r"\bagentes del caos\b", p, flags=re.IGNORECASE):
-        p = re.sub(
-            r"\bagentes del caos\b",
-            "agentes autónomos con comportamiento impredecible",
-            p,
-            flags=re.IGNORECASE,
-        )
-        if "sin suficiente control humano" not in p.lower():
-            p += " Esto significa que pueden tomar decisiones inesperadas sin suficiente control humano."
-
     return p
+
+
+def _is_reasonable_query_hint(hint: str) -> bool:
+    """Discard noisy query hints from Trends that are not valid search terms."""
+    h = _normalize_text(hint)
+    if not h:
+        return False
+    if len(h) > 80 or len(h.split()) > 8:
+        return False
+    if "http" in h:
+        return False
+    if "not available" in h or "please upgrade" in h:
+        return False
+    return True
+
+
+def _is_generic_tech_article(article: dict, tech_keywords: list[str]) -> bool:
+    """Return True when article text has clear tech/AI signal."""
+    text = f"{article.get('title', '')} {article.get('description', '')} {article.get('source_name', '')}"
+    norm = _normalize_text(text)
+    tokens = _tokenize(text)
+
+    if tokens.intersection(_AI_SIGNAL_TOKENS) or tokens.intersection(_TECH_SIGNAL_TOKENS):
+        return True
+
+    for kw in tech_keywords or []:
+        k = _normalize_text(str(kw))
+        if not k or len(k) < 3:
+            continue
+        if len(k.split()) > 4:
+            continue
+        if k in norm:
+            return True
+    return False
+
+
+def _filter_generic_tech_articles(articles: list[dict], tech_keywords: list[str]) -> list[dict]:
+    """
+    In generic mode (no focus topic), keep the pool centered on tech/AI news.
+    """
+    if not articles:
+        return articles
+
+    filtered = [a for a in articles if _is_generic_tech_article(a, tech_keywords)]
+    min_keep = max(12, len(articles) // 10)
+    if len(filtered) >= min_keep:
+        removed = len(articles) - len(filtered)
+        if removed > 0:
+            logger.info("Generic tech filter removed %s non-tech articles", removed)
+        return filtered
+
+    logger.info(
+        "Generic tech filter skipped (insufficient tech coverage: %s/%s)",
+        len(filtered),
+        len(articles),
+    )
+    return articles
 
 
 # ── Dynamic research config (editable via dashboard) ─────────────────────────
@@ -909,17 +1050,18 @@ def _load_research_config() -> dict:
 
 _DEFAULT_RESEARCH_FALLBACK = """Eres estratega de contenido para una cuenta de Instagram en español sobre Tech e IA.
 
-Analiza estos artículos y selecciona EL MEJOR tema para el carrusel de hoy.
+La marca es "TechTokio ⚡ 30s": radar diario de tecnología con aura Neo-Tokio.
+Tono de marca: directo, afilado, con humor inteligente y siempre sin humo.
 
-CRITERIOS de selección:
-1. Alto potencial viral (sorprendente, impactante o controversial)
-2. Relevante para una audiencia amplia interesada en tecnología (no demasiado nicho)
-3. Con suficiente sustancia para 6-8 slides
-4. NO repetido recientemente (ver temas pasados)
-5. Bonus si está alineado con Google Trends
-6. Prioriza historias corroboradas por varias fuentes de calidad, evitando afirmaciones de una sola fuente dudosa
-7. Evita ángulos hiperlocales o regionales si no están respaldados por múltiples fuentes relevantes
-8. Favorece temas realmente presentes en conversación amplia (varios medios + recencia)
+Analiza los artículos y selecciona EL MEJOR tema para el carrusel de hoy.
+
+CRITERIOS:
+1. Debe ser claramente tech/IA/apps/gadgets/tendencias digitales.
+2. Debe estar reciente y con conversación real (mejor si aparece en varios medios).
+3. Debe permitir explicar valor real en 6 key points, sin dejar dudas.
+4. Debe ser entendible rápido: útil para una pieza "30 segundos".
+5. No repetir temas recientes.
+6. Evitar humo, titulares vacíos o afirmaciones no verificables.
 
 ARTÍCULOS:
 {articles_text}
@@ -948,10 +1090,10 @@ Responde en este formato JSON exacto:
 }}
 
 IMPORTANTE:
-- key_points debe estar en español, ser conciso e incluir datos concretos (números, nombres, fechas) cuando sea posible.
-- Cada key_point debe ser AUTOCONTENIDO: no uses etiquetas ambiguas sin explicar (ej.: "agentes del caos").
-- Si aparece un término técnico, añade una mini-definición dentro del mismo key_point.
-- No inventes hechos no presentes en los artículos. Si falta un dato, dilo explícitamente sin rellenar con suposiciones."""
+- Resume solo lo que aparece en las fuentes.
+- No inventes hechos, cifras ni contexto.
+- Mantén el alcance exacto de la noticia (si es actualización, dilo como actualización).
+- Cada key_point debe ser autocontenido y entendible sin leer el artículo completo."""
 
 
 def _load_history() -> list[dict]:
@@ -964,6 +1106,118 @@ def _load_history() -> list[dict]:
 def _get_past_topics() -> set[str]:
     history = _load_history()
     return {entry.get("topic", "").lower() for entry in history}
+
+
+# ── Source: NewsAPI ──────────────────────────────────────────────────────────
+
+def _normalize_tavily_result(
+    item: dict,
+    query: str,
+    focus_topic: str | None = None,
+) -> dict | None:
+    """Convert one Tavily result to normalized article shape."""
+    title = (item.get("title") or "").strip()
+    url = (item.get("url") or "").strip()
+    if not title or not url:
+        return None
+    if _is_irrelevant_title(title):
+        return None
+
+    description = (
+        (item.get("content") or "")
+        or (item.get("raw_content") or "")
+        or (item.get("snippet") or "")
+    ).strip()
+    combined = f"{title} {description}"
+    if focus_topic and not _matches_focus_topic(combined, focus_topic):
+        return None
+
+    domain = _extract_domain(url)
+    if _is_blocked_domain(domain):
+        return None
+
+    published = (
+        item.get("published_date")
+        or item.get("published")
+        or item.get("date")
+        or ""
+    )
+
+    score = item.get("score", 0.0)
+    try:
+        relevance_score = float(score)
+    except (TypeError, ValueError):
+        relevance_score = 0.0
+
+    return {
+        "title": title,
+        "description": description[:300],
+        "url": url,
+        "source": "tavily/news",
+        "published": published,
+        "domain": domain,
+        "query": query,
+        "relevance_score": round(relevance_score, 4),
+    }
+
+
+def fetch_tavily_news(
+    focus_topic: str | None = None,
+    query_hints: list[str] | None = None,
+) -> list[dict]:
+    """
+    Fetch recent web news from Tavily.
+    Uses broad queries in generic mode and strict variants in focused mode.
+    """
+    if not TAVILY_API_KEY:
+        logger.warning("TAVILY_API_KEY not set, skipping Tavily")
+        return []
+
+    focus_topic = _normalize_focus_topic(focus_topic)
+    queries = _build_tavily_queries(focus_topic, trends=query_hints)
+    if not queries:
+        return []
+
+    per_query_limit = max(6, min(15, math.ceil(TAVILY_TOTAL_RESULTS / max(1, len(queries)))))
+    results = []
+    per_query_counts: dict[str, int] = {}
+
+    for query in queries:
+        payload = {
+            "api_key": TAVILY_API_KEY,
+            "query": query,
+            "topic": "news",
+            "search_depth": "advanced",
+            "max_results": per_query_limit,
+            "include_raw_content": False,
+        }
+        try:
+            resp = requests.post(TAVILY_SEARCH_URL, json=payload, timeout=25)
+            resp.raise_for_status()
+            raw_results = (resp.json() or {}).get("results", []) or []
+        except Exception as e:
+            logger.error("Tavily error for query '%s': %s", query, e)
+            per_query_counts[query] = 0
+            continue
+
+        kept = 0
+        for item in raw_results:
+            parsed = _normalize_tavily_result(item, query=query, focus_topic=focus_topic)
+            if not parsed:
+                continue
+            results.append(parsed)
+            kept += 1
+        per_query_counts[query] = kept
+
+    results = _dedupe_articles(results)
+    logger.info(
+        "Tavily returned %s deduped articles for topic '%s' across %s queries (%s)",
+        len(results),
+        focus_topic,
+        len(queries),
+        ", ".join(f"{q}:{c}" for q, c in per_query_counts.items()),
+    )
+    return results
 
 
 # ── Source: NewsAPI ──────────────────────────────────────────────────────────
@@ -1567,7 +1821,7 @@ def rank_topics(
             f"Prioritize stories published in the last {MAX_ARTICLE_AGE_DAYS} days. "
             "Prefer themes covered by multiple trusted domains over single-source claims. "
             "Avoid hyperlocal angles unless they are clearly covered by at least 2 trusted domains. "
-            "Do not output vague labels; explain every technical term briefly in the key point itself. "
+            "Keep the scope exact to the sources (do not over-generalize the story). "
             "Do not invent facts that are not present in the provided article list."
         )
 
@@ -1604,6 +1858,7 @@ def rank_topics(
                     "Choose only a topic directly related to this focus topic. "
                     f"Prefer stories from the last {MAX_ARTICLE_AGE_DAYS} days. "
                     "Prefer multi-source corroboration and avoid vague unexplained labels. "
+                    "Keep the scope exact to the sources (do not over-generalize the story). "
                     "Do not invent facts that are not present in the provided article list."
                 )
             result = _call_openai(fallback_prompt)
@@ -1647,7 +1902,7 @@ def rank_topics(
 
 # ── Main Entry Point ────────────────────────────────────────────────────────
 
-def find_trending_topic(focus_topic: str | None = None) -> dict:
+def _find_trending_topic_legacy(focus_topic: str | None = None) -> dict:
     """
     Main function: fetch from all sources, rank, and return the best topic.
 
@@ -1701,6 +1956,12 @@ def find_trending_topic(focus_topic: str | None = None) -> dict:
 
     all_articles = _dedupe_articles(all_articles)
     all_articles = _strict_focus_filter(all_articles, focus_topic)
+    if not focus_topic:
+        config = _load_research_config()
+        all_articles = _filter_generic_tech_articles(
+            all_articles,
+            tech_keywords=list(config.get("trends_keywords", [])),
+        )
     logger.info(f"Total unique articles fetched: {len(all_articles)}, trends: {len(trends)}")
 
     filtered_articles = _filter_recent_articles(all_articles, max_age_days=MAX_ARTICLE_AGE_DAYS)
@@ -1761,6 +2022,131 @@ def find_trending_topic(focus_topic: str | None = None) -> dict:
     # Rank and select the best topic
     topic = rank_topics(all_articles, trends, past_topics, focus_topic=focus_topic)
     return topic
+
+
+def _find_trending_topic_tavily(focus_topic: str | None = None) -> dict:
+    """
+    Simplified research path:
+    - Tavily as main source
+    - Google Trends as trend signal
+    - Google News RSS as resilient fallback
+    """
+    focus_topic = _normalize_focus_topic(focus_topic)
+    logger.info("Starting research phase...")
+    logger.info("Research backend: tavily")
+    if focus_topic:
+        logger.info(f"Research focus topic: {focus_topic}")
+    past_topics = _get_past_topics()
+
+    trends = fetch_google_trends(focus_topic)
+
+    all_articles = fetch_tavily_news(
+        focus_topic=focus_topic,
+        query_hints=trends[:15] if trends else None,
+    )
+
+    fallback_articles = []
+    if focus_topic:
+        fallback_articles.extend(fetch_google_news_rss(focus_topic, query_hints=trends[:15] if trends else None))
+        if not fallback_articles:
+            fallback_articles.extend(fetch_google_news_sections(focus_topic))
+    else:
+        fallback_articles.extend(fetch_google_news_sections())
+
+    if len(all_articles) < MIN_RECENT_ARTICLES and fallback_articles:
+        all_articles.extend(fallback_articles)
+        logger.info(
+            "Google News fallback added %s articles (total before dedupe: %s)",
+            len(fallback_articles),
+            len(all_articles),
+        )
+
+    all_articles = _dedupe_articles(all_articles)
+    all_articles = _strict_focus_filter(all_articles, focus_topic)
+    if not focus_topic:
+        config = _load_research_config()
+        all_articles = _filter_generic_tech_articles(
+            all_articles,
+            tech_keywords=list(config.get("trends_keywords", [])),
+        )
+    logger.info(f"Total unique articles fetched: {len(all_articles)}, trends: {len(trends)}")
+
+    filtered_articles = _filter_recent_articles(all_articles, max_age_days=MAX_ARTICLE_AGE_DAYS)
+    if filtered_articles:
+        all_articles = filtered_articles
+    elif all_articles:
+        logger.warning(
+            "No recent articles remained after recency filter; using freshest available articles"
+        )
+        all_articles = sorted(
+            all_articles,
+            key=lambda a: (_parse_published_datetime(a.get("published", "")) or datetime.min.replace(tzinfo=timezone.utc)),
+            reverse=True,
+        )[:MIN_RECENT_ARTICLES]
+
+    all_articles = _filter_focus_freshness(
+        all_articles,
+        focus_topic=focus_topic,
+        max_age_days=MAX_FOCUS_ARTICLE_AGE_DAYS,
+        min_keep=MIN_FOCUS_FRESH_ARTICLES,
+    )
+
+    all_articles = _filter_low_trust_focus_articles(
+        all_articles,
+        focus_topic=focus_topic,
+        min_trust_score=0.0,
+    )
+
+    all_articles = _prioritize_articles(
+        all_articles,
+        trends=trends,
+        focus_topic=focus_topic,
+        limit=60,
+        max_per_domain=4,
+    )
+    _log_top_articles(all_articles, top_n=10)
+    logger.info(f"Articles passed to ranking: {len(all_articles)}")
+
+    if not all_articles and focus_topic and trends:
+        logger.warning(
+            "No matching articles found from Tavily/RSS; falling back to Google Trends-only context."
+        )
+        now_iso = datetime.utcnow().isoformat() + "Z"
+        all_articles = [
+            {
+                "title": f"{focus_topic}: {trend}",
+                "description": "Trend signal from Google Trends related query.",
+                "url": "",
+                "source": "google_trends/related",
+                "published": now_iso,
+            }
+            for trend in trends[:20]
+        ]
+
+    if not all_articles:
+        raise RuntimeError("No articles fetched from any source. Check API keys and network.")
+
+    topic = rank_topics(all_articles, trends, past_topics, focus_topic=focus_topic)
+    return topic
+
+
+def find_trending_topic(focus_topic: str | None = None) -> dict:
+    """
+    Main entry point with backend routing.
+
+    Backends:
+      - tavily: simplified Tavily-first research
+      - legacy: original multi-source stack
+      - auto: tavily when key is present, otherwise legacy
+    """
+    backend = _resolve_research_backend()
+    if backend == "tavily":
+        try:
+            return _find_trending_topic_tavily(focus_topic=focus_topic)
+        except Exception as e:
+            logger.warning("Tavily backend failed (%s). Falling back to legacy backend.", e)
+            return _find_trending_topic_legacy(focus_topic=focus_topic)
+    return _find_trending_topic_legacy(focus_topic=focus_topic)
 
 
 # ── CLI Test Mode ────────────────────────────────────────────────────────────

@@ -9,7 +9,8 @@ Usage:
     python main_pipeline.py --step research     # Run only research
     python main_pipeline.py --step content      # Run only content gen (needs topic)
     python main_pipeline.py --step design       # Run only design (needs content)
-    python main_pipeline.py --template 0        # Force a specific template (0-3)
+    python main_pipeline.py --template 0        # Force a specific template (0-N)
+    python main_pipeline.py --topic "agentes de IA" --dry-run   # Focused research
 """
 
 import argparse
@@ -24,9 +25,27 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import DATA_DIR, HISTORY_FILE, LOGS_DIR, OUTPUT_DIR
+from config.settings import DATA_DIR, HISTORY_FILE, LOGS_DIR, OPENAI_API_KEY, OUTPUT_DIR
+from config.templates import TEMPLATES
 
 logger = logging.getLogger("pipeline")
+
+
+def _validate_required_keys(test_mode: bool, step: str | None):
+    """
+    Validate minimal required API keys for the requested run mode.
+
+    Fails fast with actionable messages so users don't wait for late-stage API errors.
+    """
+    if test_mode:
+        return
+
+    needs_openai = step in (None, "research", "content")
+    if needs_openai and not OPENAI_API_KEY:
+        raise RuntimeError(
+            "OPENAI_API_KEY is missing. Create .env (or set the key in Dashboard > API Keys) "
+            "and run again."
+        )
 
 
 def setup_logging(verbose: bool = False):
@@ -134,7 +153,13 @@ def get_sample_content() -> dict:
     }
 
 
-def daily_pipeline(dry_run: bool = False, test_mode: bool = False, step: str | None = None, template_idx: int | None = None):
+def daily_pipeline(
+    dry_run: bool = False,
+    test_mode: bool = False,
+    step: str | None = None,
+    template_idx: int | None = None,
+    focus_topic: str | None = None,
+):
     """
     Execute the full daily pipeline.
 
@@ -143,6 +168,7 @@ def daily_pipeline(dry_run: bool = False, test_mode: bool = False, step: str | N
         test_mode: if True, use sample data (no API calls)
         step: if set, run only this step ('research', 'content', 'design')
         template_idx: force a specific carousel template
+        focus_topic: optional user-defined topic to focus research on
     """
     logger.info("=" * 60)
     logger.info(f"INSTAGRAM AI BOT — Pipeline Start")
@@ -150,7 +176,11 @@ def daily_pipeline(dry_run: bool = False, test_mode: bool = False, step: str | N
     logger.info(f"  Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     if step:
         logger.info(f"  Step: {step}")
+    if focus_topic:
+        logger.info(f"  Focus topic: {focus_topic}")
     logger.info("=" * 60)
+
+    _validate_required_keys(test_mode=test_mode, step=step)
 
     topic = None
     content = None
@@ -165,7 +195,7 @@ def daily_pipeline(dry_run: bool = False, test_mode: bool = False, step: str | N
             logger.info(f"[TEST] Using sample topic: {topic['topic']}")
         else:
             from modules.researcher import find_trending_topic
-            topic = find_trending_topic()
+            topic = find_trending_topic(focus_topic=focus_topic)
 
         logger.info(f"✓ Topic: {topic['topic']}")
         logger.info(f"  Virality: {topic.get('virality_score', 'N/A')}/10")
@@ -283,13 +313,14 @@ Examples:
   python main_pipeline.py --test             # Sample data, no APIs
   python main_pipeline.py --step research    # Only find trending topic
   python main_pipeline.py --step design      # Only generate images
-  python main_pipeline.py --template 2       # Use template #2 (dark_green)
+  python main_pipeline.py --template 2       # Use a specific template index
         """,
     )
     parser.add_argument("--dry-run", action="store_true", help="Run without publishing")
     parser.add_argument("--test", action="store_true", help="Use sample data (no API calls)")
     parser.add_argument("--step", choices=["research", "content", "design"], help="Run a single step")
-    parser.add_argument("--template", type=int, choices=[0, 1, 2, 3], help="Force template index")
+    parser.add_argument("--template", type=int, choices=list(range(len(TEMPLATES))), help="Force template index")
+    parser.add_argument("--topic", type=str, help="Focus research on this topic (e.g. 'agentes de IA')")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable debug logging")
 
     args = parser.parse_args()
@@ -302,6 +333,7 @@ Examples:
             test_mode=args.test,
             step=args.step,
             template_idx=args.template,
+            focus_topic=args.topic,
         )
     except KeyboardInterrupt:
         logger.info("\nPipeline interrupted by user")

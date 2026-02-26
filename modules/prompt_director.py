@@ -23,8 +23,7 @@ logger = logging.getLogger(__name__)
 # ── Default meta-prompts (editable via dashboard) ────────────────────────────
 
 _DEFAULT_RESEARCH_META = """Eres un/a Prompt Engineer. Tu trabajo es escribir el MEJOR prompt posible
-para un modelo GPT-4o-mini que rankee y seleccione temas en tendencia de tech/IA para un
-carrusel de Instagram en español.
+para un modelo GPT-4o-mini que seleccione un tema de actualidad para "TechTokio ⚡ 30s".
 
 CONTEXTO de la ejecución de hoy:
 - Día de la semana: {day_name}
@@ -32,25 +31,21 @@ CONTEXTO de la ejecución de hoy:
 - Hay datos de Google Trends: {has_trends}
 - Número de temas pasados a evitar: {past_count}
 
-ADAPTACIONES que debes aplicar:
-- Si es Monday/Lunes: sesga hacia temas orientados al futuro (lanzamientos, predicciones, roadmaps)
-- Si es Friday/Viernes: sesga hacia recap semanal o ángulos de "lo mejor de la semana"
-- Si past_count > 15: enfatiza con fuerza diversidad y novedad en la selección
-- Si hay pocos artículos (<10): pide más creatividad combinando historias relacionadas
-- Si hay muchos artículos (>30): prioriza recencia y viralidad
-
 El prompt que escribas debe:
-1. Ser para una cuenta de Instagram en español sobre Tech/IA
+1. Ser para una cuenta de Instagram en español con aura Neo-Tokio.
 2. Incluir placeholders para: {{articles}}, {{trends}}, {{past_topics}}
 3. Pedir salida JSON con: topic, topic_en, why, key_points (6), source_urls, virality_score
-4. Incluir criterios de puntuación (viralidad, amplitud, sustancia, frescura)
-5. Ser claro, específico y de menos de 800 palabras
+4. Priorizar: recencia, corroboración entre medios, relevancia tech/IA y utilidad práctica.
+5. Exigir fidelidad a fuentes: no inventar datos y no ampliar el alcance de la noticia.
+6. Pedir key_points autocontenidos, claros y "sin humo".
+7. Mantener estilo editorial de marca: directo, afilado, humor inteligente.
+8. Ser claro y de menos de 500 palabras.
 
 Escribe SOLO el texto del prompt. Sin explicación y sin envolver en markdown."""
 
 _DEFAULT_CONTENT_META = """Eres un/a Prompt Engineer especializado/a en contenido VIRAL de Instagram.
-Tu trabajo es escribir el MEJOR prompt posible para un modelo GPT-4o-mini que genere
-contenido de carrusel en español con MÁXIMO poder de retención.
+Tu trabajo es escribir un prompt excelente para un modelo GPT-4o-mini que genere
+un carrusel claro, fiel a la noticia y con el branding "TechTokio ⚡ 30s".
 
 TEMA A CUBRIR:
 - Título (ES): {topic_title}
@@ -63,56 +58,32 @@ CONTEXTO:
 - Guía de tono: {tone_hint}
 - Estilo de contenido: {style_hint}
 
-FÓRMULAS DE HOOK VIRAL — El titular del cover DEBE usar uno de estos patrones:
-1. HOOK DE PREGUNTA: provoca curiosidad con una pregunta imposible de ignorar
-   Ejemplos: "¿Tu trabajo desaparece en 2026?", "¿Sabías que la IA ya puede...?"
-2. SHOCK / ESTADÍSTICA: abre con un dato impactante
-   Ejemplos: "El 80% de los programadores serán reemplazados", "1 millón de empleos perdidos en 90 días"
-3. PROMESA / BENEFICIO: promete transformación o conocimiento exclusivo
-   Ejemplos: "5 herramientas IA que te ahorran 10 horas/semana", "Así ganan $10K/mes con IA"
-4. ERROR / MITO: desafía una creencia común
-   Ejemplos: "Estás usando ChatGPT MAL", "Lo que nadie te dice sobre la IA"
-5. CURIOSIDAD / CLIFFHANGER: abre una brecha de información
-   Ejemplos: "Google acaba de hacer algo INCREÍBLE", "La IA que asusta hasta a Elon Musk"
-6. PASO A PASO / LISTA: promete valor estructurado y fácil de consumir
-   Ejemplos: "7 IAs que cambiarán tu vida en 2026", "3 pasos para dominar la IA"
-
-FORMATO DEL COVER (MUY IMPORTANTE):
-- "title": etiqueta/gancho CORTO de 3-5 palabras en MAYÚSCULAS (ej: "LA IA NO PARA", "ALERTA TECH")
-- "subtitle": titular PRINCIPAL en MAYÚSCULAS (15-25 palabras) con **doble asterisco**
-  alrededor de 1 o 2 FRASES CLAVE que deben resaltarse en otro color.
-  Ejemplo: "AQUÍ TIENES LAS **NOTICIAS MÁS IMPORTANTES** DE LOS ÚLTIMOS 7 DÍAS"
-  Ejemplo: "OPENAI ACABA DE **LANZAR GPT-5** Y LO CAMBIA TODO EN LA IA"
-
-COHERENCIA NARRATIVA (MUY IMPORTANTE — incluye estas reglas en tu prompt):
-- Los 6 slides de contenido deben seguir un ARCO NARRATIVO LÓGICO, no hechos aislados
-- Flujo sugerido: Qué pasó → Detalles/datos clave → Por qué importa → Qué viene después
-- Cada slide debe ser AUTOCONTENIDO: entregar una idea completa, NUNCA dejar preguntas abiertas
-- Si un slide plantea un problema o pregunta, DEBE dar respuesta en ESE MISMO slide
-- Cada slide debe aportar VALOR CONCRETO: datos, números, fechas, comparaciones
-- Evita repetición: cada slide debe añadir información NUEVA
-
-REGLAS CRÍTICAS para el prompt que escribas:
-1. El subtítulo del cover DEBE ser clickbait/viral usando una de las 6 fórmulas anteriores
-2. El título del cover es CORTO (3-5 palabras), el subtítulo es el titular principal con **resaltados**
-3. Genera exactamente 8 slides: 1 cover + 6 contenido + 1 CTA
-4. Todo el texto en ESPAÑOL
-5. Máximo 32 palabras por slide de contenido
-6. Slides de contenido: una idea por slide con datos concretos (números, nombres, fechas)
-7. Slide CTA: incentivar guardados, compartidos y follows con urgencia
-8. También genera: caption (300-500 chars), alt_text, 5 hashtags sugeridos
-9. El caption debe empezar con pregunta hook o afirmación fuerte, NO con descripción
-10. Pedir salida JSON con esta estructura exacta:
-    slides[] (type, title, subtitle/body/number), caption, alt_text, hashtag_suggestions
-11. MAQUETACIÓN DE BODY: escribe en bloques cortos para lectura rápida; permite saltos de línea `\\n`.
-    Si es un slide de pasos/guía, usa lista numerada (`1.`, `2.`, `3.`) en líneas separadas.
-12. RESALTADOS CON `**`: evita exceso. Máximo 2 fragmentos en cover subtitle y máximo 1 fragmento por campo en contenido/CTA.
-    Cada resaltado debe tener 2-4 palabras (no frases largas).
-13. CLARIDAD: no uses etiquetas ambiguas o no explicadas. Si aparece un término técnico, defínelo brevemente en el mismo slide.
-14. Cada slide debe dejar una idea cerrada y útil (qué es + por qué importa + dato concreto).
-15. Cada body debe incluir al menos un dato verificable del tema (número, empresa, producto, organismo o fecha); evita hype sin evidencia.
-16. No inventes datos fuera de los key points/contexto; si falta un dato, dilo sin fabricarlo.
-17. Cada slide de contenido debe mapear al key point correspondiente en orden (slide 1 ↔ key point 1, etc.).
+Tu prompt generado debe incluir reglas simples y estrictas:
+1. Salida JSON con: slides, caption, alt_text, hashtag_suggestions.
+2. Exactamente 8 slides: 1 cover + 6 contenido + 1 CTA.
+3. Cover:
+   - title: 3-5 palabras, gancho fuerte.
+   - subtitle: 12-24 palabras, preciso + clickbait sin exagerar.
+4. Slides de contenido:
+   - Uno por cada key point en orden.
+   - Entre 38 y 65 palabras por slide.
+   - Idea cerrada, útil y fácil de entender.
+   - Cada body debe explicar un hecho concreto, su contexto y su consecuencia práctica.
+   - Evitar plantillas repetitivas (ej. "Por qué importa:", "Dato clave:").
+   - Cuando ayude a la lectura, usar 2 bloques cortos separados por salto de línea.
+5. Fidelidad:
+   - No inventar datos fuera de key_points/contexto.
+   - Mantener el alcance exacto de la noticia.
+6. Estilo de marca:
+   - Español claro, directo, afilado, con humor inteligente.
+   - Cero humo: no frases vacías ni grandilocuentes.
+   - Títulos de contenido concretos y naturales; no uses etiquetas/códigos prefijo tipo RADAR, TOOL, 速報, 判定.
+   - Resaltados con `**` limitados (máx. 2 en cover subtitle; máx. 1 por campo en contenido/CTA).
+7. Caption:
+   - 250-500 caracteres.
+   - Hook inicial + resumen + pregunta final.
+8. Incluir el sello "TechTokio ⚡ 30s" una vez (en CTA o caption).
+9. Incluir alt_text y 5 hashtags relevantes.
 
 TONO: {tone_hint}
 ESTILO: {style_hint}
@@ -121,7 +92,7 @@ Escribe SOLO el texto del prompt con los datos del tema embebidos.
 Sin explicación y sin envolver en markdown."""
 
 _DEFAULT_IMAGE_META = """Eres un/a Prompt Engineer para generación de imágenes con IA,
-especializado/a en portadas virales de Instagram para una cuenta de noticias tech.
+especializado/a en portadas virales para la marca "TechTokio ⚡ 30s".
 
 La imagen se usará en el 50% superior del cover del carrusel. El texto va en la mitad inferior.
 
@@ -129,22 +100,14 @@ TOPIC: {topic_en}
 
 TU TAREA:
 Crea un prompt que genere una imagen DIRECTAMENTE RELACIONADA con este tema.
-NO caigas en "oficina genérica". Prioriza representación LITERAL del tema sobre metáforas abstractas.
-Ejemplos:
-- Tema gaming/consolas → setup gamer, mando, habitación con pantallas
-- Tema IA → robot futurista, visualización de red neuronal, concepto de cerebro IA
-- Tema hack/seguridad → figura encapuchada, glitches, pantalla rota
-- Tema empresa → producto en uso, plano dramático del producto, entorno de trabajo
-- Tema redes sociales → pantallas de smartphone, feeds, persona haciendo scroll
-- Tema espacio/ciencia → astronauta, planeta, laboratorio con equipamiento
-
-La imagen debe ser INMEDIATAMENTE reconocible como relacionada con "{topic_en}".
+Evita oficinas genéricas y metáforas abstractas sin conexión.
+La imagen debe ser reconocible al instante como parte de la identidad Neo-Tokio.
 
 ESTILO:
-- Ilustración SIMPLE y legible: composición minimalista, pocos elementos, lectura inmediata
-- Ilustración editorial dibujada a mano, personal y expresiva (textura de pincel/tinta/lápiz visible)
-- Acabado estilizado y humano (NO fotorrealista, NO render 3D, NO look de stock)
-- Simbolismo temático fuerte y directamente conectado con el tema
+- Ilustración SIMPLE y legible, estética nocturna + neón.
+- Paleta de marca: carbón oscuro, blanco y acento azul eléctrico.
+- Look editorial moderno, personal y expresivo.
+- No fotorrealismo, no render 3D, no look stock.
 
 REGLAS DE COMPOSICIÓN (NO NEGOCIABLES):
 - Define un ÚNICO SUJETO HÉROE que represente claramente el tema (producto/objeto/dispositivo/contexto).
@@ -250,22 +213,22 @@ class PromptDirector:
 
             # Determine tone and style guidance
             if virality >= 9:
-                tone_hint = "dramatic, high-impact, urgency — this is breaking news"
+                tone_hint = "alto impacto y urgencia, sin exagerar ni inventar"
             elif virality >= 7:
-                tone_hint = "informative, confident, data-driven — solid trending story"
+                tone_hint = "informativo, seguro y basado en datos verificables"
             else:
-                tone_hint = "exploratory, curious, educational — niche but interesting"
+                tone_hint = "didáctico, curioso y útil, con enfoque práctico"
 
             # Determine content style by topic type
             topic_lower = topic_en.lower()
             if any(w in topic_lower for w in ["launch", "release", "announce", "new"]):
-                style_hint = "Include benchmarks, comparisons with previous versions, and pricing"
+                style_hint = "Incluir comparativa con la versión anterior, mejoras reales y precio/disponibilidad"
             elif any(w in topic_lower for w in ["security", "hack", "breach", "vulnerability"]):
-                style_hint = "Create urgency, explain who is affected, and provide actionable advice"
+                style_hint = "Explicar a quién afecta, nivel de riesgo y acciones concretas para protegerse"
             elif any(w in topic_lower for w in ["product", "tool", "app", "service"]):
-                style_hint = "Compare with alternatives, highlight unique features, include use cases"
+                style_hint = "Comparar alternativas, destacar diferenciales reales y casos de uso"
             else:
-                style_hint = "Focus on why this matters, real-world implications, and what comes next"
+                style_hint = "Aterrizar por qué importa hoy, impacto real y qué viene después"
 
             try:
                 template = load_prompt("content_meta", _DEFAULT_CONTENT_META)
@@ -340,17 +303,17 @@ class PromptDirector:
             crafted = response.choices[0].message.content.strip()
             # Hard guardrail to keep subject placement stable for cover composition.
             crafted += (
-                " Composition: single hero subject directly related to "
-                f"'{topic_en}', dominant and in sharp focus in the upper half "
-                "(top 45-55%); bottom 45% dark/clean negative space for text; "
-                "no unrelated element may dominate the frame. "
-                "Style must be hand-drawn editorial illustration with personal brush/ink texture, "
-                "not photorealistic."
+                " Composición obligatoria: un único sujeto héroe directamente relacionado con "
+                f"'{topic_en}', dominante y en foco en la mitad superior (45-55%); "
+                "el 45% inferior debe quedar oscuro, limpio y libre para texto; "
+                "ningún elemento secundario puede dominar la escena. "
+                "Estilo obligatorio: ilustración editorial dibujada a mano, con textura personal de tinta/pincel; "
+                "prohibido fotorealismo."
             )
             if cover_text:
                 crafted += (
-                    f" Headline hint: '{cover_text}'. Use a hero subject that matches "
-                    "the concrete noun/context implied by this headline."
+                    f" Pista del titular: '{cover_text}'. "
+                    "El sujeto héroe debe corresponder al sustantivo/contexto concreto del titular."
                 )
             logger.info(f"Director crafted image prompt: {crafted[:80]}...")
             return crafted

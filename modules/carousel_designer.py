@@ -11,6 +11,7 @@ Creates 1080x1350px slides with:
 
 import logging
 import textwrap
+from collections import deque
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -18,6 +19,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import re
 
 from config.settings import (
+    BRAND_LOGO_PATH,
     FONTS_DIR,
     INSTAGRAM_HANDLE,
     OUTPUT_DIR,
@@ -31,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 _VARIABLE_FONT = FONTS_DIR / "SpaceGrotesk-Regular.ttf"
+_BRAND_LOGO_CACHE: dict[int, Image.Image] = {}
 
 
 def _get_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -87,6 +90,71 @@ def _draw_gradient(draw: ImageDraw.Draw, width: int, height: int, color_top: tup
         draw.line([(0, y), (width, y)], fill=(r, g, b))
 
 
+def _fit_image_cover(img: Image.Image, width: int, height: int) -> Image.Image:
+    """Resize + crop image to fully cover a target rectangle."""
+    src_w, src_h = img.size
+    if src_w <= 0 or src_h <= 0:
+        return img.resize((width, height), Image.LANCZOS)
+
+    scale = max(width / src_w, height / src_h)
+    new_w = max(1, int(src_w * scale))
+    new_h = max(1, int(src_h * scale))
+    resized = img.resize((new_w, new_h), Image.LANCZOS)
+
+    left = max(0, (new_w - width) // 2)
+    top = max(0, (new_h - height) // 2)
+    return resized.crop((left, top, left + width, top + height))
+
+
+def _draw_image_card(
+    img: Image.Image,
+    draw: ImageDraw.Draw,
+    source: Image.Image,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    border_color: tuple,
+):
+    """Draw a rounded media card to emulate editorial carousel layouts."""
+    radius = 30
+    fitted = _fit_image_cover(source, width, height).copy()
+
+    # Slightly darken card image to avoid visual competition with text.
+    dark = Image.new("RGBA", (width, height), (0, 0, 0, 48))
+    fitted = Image.alpha_composite(fitted.convert("RGBA"), dark)
+
+    mask = Image.new("L", (width, height), 0)
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.rounded_rectangle([0, 0, width, height], radius=radius, fill=255)
+
+    card = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    card.paste(fitted, (0, 0), mask)
+    img.paste(card, (x, y), card)
+
+    draw.rounded_rectangle(
+        [x, y, x + width, y + height],
+        radius=radius,
+        outline=(*border_color[:3], 170),
+        width=2,
+    )
+
+
+def _line_metrics(draw: ImageDraw.Draw, font: ImageFont.FreeTypeFont, line_spacing: float) -> tuple[int, int]:
+    """Return stable line height and line step for consistent text rhythm."""
+    try:
+        ascent, descent = font.getmetrics()
+        metric_height = ascent + descent
+    except Exception:
+        metric_height = 0
+
+    sample_bbox = draw.textbbox((0, 0), "AgÁy", font=font)
+    sample_height = sample_bbox[3] - sample_bbox[1]
+    line_height = max(metric_height, sample_height, font.size)
+    line_step = max(line_height + 2, int(line_height * line_spacing))
+    return line_height, line_step
+
+
 def _draw_text_wrapped(
     draw: ImageDraw.Draw,
     text: str,
@@ -100,21 +168,41 @@ def _draw_text_wrapped(
 ) -> int:
     """Draw left-aligned text with word wrapping and optional **highlight** support.
 
-    Text wrapped in **double asterisks** renders in highlight_color with an underline.
+    Text wrapped in **double asterisks** renders only in highlight_color.
     Returns the Y position after the last line.
     """
+    # Respect manual line breaks: useful for numbered steps and short paragraph rhythm.
+    if "\n" in text:
+        current_y = y
+        parts = text.split("\n")
+        for idx, part in enumerate(parts):
+            part = part.strip()
+            if not part:
+                current_y += max(12, int(font.size * 0.45))
+                continue
+
+            current_y = _draw_text_wrapped(
+                draw, part, x, current_y, max_width, font, fill,
+                line_spacing=line_spacing,
+                highlight_color=highlight_color,
+            )
+
+            # Tiny breathing room between explicit lines.
+            if idx < len(parts) - 1 and parts[idx + 1].strip():
+                current_y += max(4, int(font.size * 0.12))
+        return current_y
+
     # Strip ** markers if no highlight color — render plain
     if highlight_color is None:
         clean = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
         avg_char_width = font.size * 0.55
         chars_per_line = max(1, int(max_width / avg_char_width))
         lines = textwrap.wrap(clean, width=chars_per_line)
+        _, line_step = _line_metrics(draw, font, line_spacing)
         current_y = y
         for line in lines:
-            bbox = draw.textbbox((0, 0), line, font=font)
-            line_height = bbox[3] - bbox[1]
             draw.text((x, current_y), line, font=font, fill=fill)
-            current_y += int(line_height * line_spacing)
+            current_y += line_step
         return current_y
 
     # Parse **highlight** segments into (word, is_highlighted) list
@@ -143,14 +231,10 @@ def _draw_text_wrapped(
     if current_line:
         lines.append(current_line)
 
-    # Draw each line left-aligned with highlight color + underline
-    underline_thickness = max(2, font.size // 16)
-    underline_gap = 4
+    # Draw each line left-aligned with highlight color
+    _, line_step = _line_metrics(draw, font, line_spacing)
     current_y = y
     for line_words in lines:
-        line_text = " ".join(w for w, _ in line_words)
-        bbox = draw.textbbox((0, 0), line_text, font=font)
-        line_h = bbox[3] - bbox[1]
         cursor_x = x
 
         for word, is_hl in line_words:
@@ -159,16 +243,9 @@ def _draw_text_wrapped(
             word_bbox = draw.textbbox((0, 0), word, font=font)
             word_w = word_bbox[2] - word_bbox[0]
 
-            if is_hl:
-                ul_y = current_y + line_h + underline_gap
-                draw.rectangle(
-                    [cursor_x, ul_y, cursor_x + word_w, ul_y + underline_thickness],
-                    fill=highlight_color,
-                )
-
             cursor_x += word_w + space_width
 
-        current_y += int(line_h * line_spacing)
+        current_y += line_step
 
     return current_y
 
@@ -182,6 +259,124 @@ def _draw_accent_line(draw: ImageDraw.Draw, template: dict, y: int):
         [x, y, x + width, y + height],
         fill=template["accent_color"],
     )
+
+
+def _get_brand_logo(size: int) -> Image.Image | None:
+    """Load and cache brand logo resized as RGBA."""
+    if BRAND_LOGO_PATH is None:
+        return None
+    cached = _BRAND_LOGO_CACHE.get(size)
+    if cached is not None:
+        return cached
+
+    def _remove_border_background(img: Image.Image) -> Image.Image:
+        """
+        Remove dark border-connected background and keep the logo subject.
+        Useful when the source logo comes as flat RGB without transparency.
+        """
+        rgb = img.convert("RGB")
+        w, h = rgb.size
+        if w <= 2 or h <= 2:
+            return img.convert("RGBA")
+
+        px = rgb.load()
+        border_samples = []
+        # Sample all border pixels to estimate background color.
+        for x in range(w):
+            border_samples.append(px[x, 0])
+            border_samples.append(px[x, h - 1])
+        for y in range(1, h - 1):
+            border_samples.append(px[0, y])
+            border_samples.append(px[w - 1, y])
+
+        bg_r = sum(c[0] for c in border_samples) / len(border_samples)
+        bg_g = sum(c[1] for c in border_samples) / len(border_samples)
+        bg_b = sum(c[2] for c in border_samples) / len(border_samples)
+        bg_luma = (bg_r * 299 + bg_g * 587 + bg_b * 114) / 1000
+
+        def similar_to_bg(r: int, g: int, b: int) -> bool:
+            dist = abs(r - bg_r) + abs(g - bg_g) + abs(b - bg_b)
+            luma = (r * 299 + g * 587 + b * 114) / 1000
+            # Keep threshold adaptive but conservative to avoid eating bright logo strokes.
+            dist_threshold = 65 if bg_luma < 70 else 52
+            luma_threshold = 85 if bg_luma < 70 else 95
+            return dist <= dist_threshold and luma <= luma_threshold
+
+        visited = bytearray(w * h)
+        q: deque[tuple[int, int]] = deque()
+
+        def push_if_bg(x: int, y: int):
+            idx = y * w + x
+            if visited[idx]:
+                return
+            r, g, b = px[x, y]
+            if similar_to_bg(r, g, b):
+                visited[idx] = 1
+                q.append((x, y))
+
+        # Seed flood-fill from borders only (background is usually edge-connected).
+        for x in range(w):
+            push_if_bg(x, 0)
+            push_if_bg(x, h - 1)
+        for y in range(1, h - 1):
+            push_if_bg(0, y)
+            push_if_bg(w - 1, y)
+
+        while q:
+            x, y = q.popleft()
+            if x > 0:
+                push_if_bg(x - 1, y)
+            if x < w - 1:
+                push_if_bg(x + 1, y)
+            if y > 0:
+                push_if_bg(x, y - 1)
+            if y < h - 1:
+                push_if_bg(x, y + 1)
+
+        rgba = rgb.convert("RGBA")
+        data = list(rgba.getdata())
+        for y in range(h):
+            row_start = y * w
+            for x in range(w):
+                idx = row_start + x
+                if visited[idx]:
+                    r, g, b, _ = data[idx]
+                    data[idx] = (r, g, b, 0)
+        rgba.putdata(data)
+
+        # Trim transparent margins so the logo occupies more visual area.
+        alpha = rgba.getchannel("A")
+        bbox = alpha.getbbox()
+        if bbox:
+            rgba = rgba.crop(bbox)
+        return rgba
+
+    try:
+        raw = Image.open(BRAND_LOGO_PATH)
+        logo = _remove_border_background(raw)
+        logo = _fit_image_cover(logo, size, size)
+        _BRAND_LOGO_CACHE[size] = logo
+        return logo
+    except Exception as e:
+        logger.warning(f"Could not load brand logo: {e}")
+        return None
+
+
+def _draw_brand_logo_badge(img: Image.Image, draw: ImageDraw.Draw, template: dict):
+    """
+    Draw a small persistent brand logo badge in the top-left corner.
+    No-op if brand logo file is missing.
+    """
+    logo_size = 108
+    pad = 20
+    logo = _get_brand_logo(logo_size)
+    if logo is None:
+        return
+
+    x = pad
+    y = pad
+    # Place logo as-is (no circle, no ring, no glow).
+    img.paste(logo, (x, y), logo)
 
 
 def _draw_branded_footer(img: Image.Image, draw: ImageDraw.Draw, template: dict):
@@ -287,6 +482,23 @@ def _draw_bicolor_text_centered(
 
     Words wrapped in **double asterisks** render in highlight_color, rest in normal_color.
     """
+    # Respect manual line breaks for explicit cover composition.
+    if "\n" in text:
+        current_y = y
+        parts = text.split("\n")
+        for idx, part in enumerate(parts):
+            part = part.strip()
+            if not part:
+                current_y += max(12, int(font.size * 0.45))
+                continue
+            current_y = _draw_bicolor_text_centered(
+                draw, part, current_y, max_width, font,
+                normal_color, highlight_color, line_spacing=line_spacing,
+            )
+            if idx < len(parts) - 1 and parts[idx + 1].strip():
+                current_y += max(4, int(font.size * 0.12))
+        return current_y
+
     # Parse the bicolor segments
     segments = _parse_bicolor_text(text)
 
@@ -322,13 +534,13 @@ def _draw_bicolor_text_centered(
     # Draw each line centered with text shadow for legibility
     shadow_offset = 3
     shadow_color = (0, 0, 0, 200)
+    _, line_step = _line_metrics(draw, font, line_spacing)
     current_y = y
     for line_words in lines:
         # Calculate total line width
         line_text = " ".join(w for w, _ in line_words)
         line_bbox = draw.textbbox((0, 0), line_text, font=font)
         line_w = line_bbox[2] - line_bbox[0]
-        line_h = line_bbox[3] - line_bbox[1]
 
         # Center horizontally
         x = (SLIDE_WIDTH - line_w) // 2
@@ -348,9 +560,69 @@ def _draw_bicolor_text_centered(
             word_bbox = draw.textbbox((0, 0), word, font=font)
             cursor_x += word_bbox[2] - word_bbox[0] + space_width
 
-        current_y += int(line_h * line_spacing)
+        current_y += line_step
 
     return current_y
+
+
+def _estimate_bicolor_line_count(
+    draw: ImageDraw.Draw,
+    text: str,
+    max_width: int,
+    font: ImageFont.FreeTypeFont,
+) -> int:
+    """Estimate wrapped line count for bicolor text to improve cover layout."""
+    segments = _parse_bicolor_text(text)
+    words = []
+    for seg_text, is_hl in segments:
+        for w in seg_text.split():
+            words.append((w, is_hl))
+    if not words:
+        return 0
+
+    space_width = draw.textbbox((0, 0), " ", font=font)[2]
+    lines = []
+    current_line = []
+    current_width = 0
+    for word, is_hl in words:
+        word_bbox = draw.textbbox((0, 0), word, font=font)
+        word_w = word_bbox[2] - word_bbox[0]
+        needed = word_w + (space_width if current_line else 0)
+        if current_line and current_width + needed > max_width:
+            lines.append(current_line)
+            current_line = [(word, is_hl)]
+            current_width = word_w
+        else:
+            current_line.append((word, is_hl))
+            current_width += needed
+    if current_line:
+        lines.append(current_line)
+    return len(lines)
+
+
+def _estimate_wrapped_line_count(
+    draw: ImageDraw.Draw,
+    text: str,
+    max_width: int,
+    font: ImageFont.FreeTypeFont,
+) -> int:
+    """Estimate wrapped line count for plain text rendered by _draw_text_wrapped."""
+    clean = re.sub(r'\*\*(.+?)\*\*', r'\1', str(text or ""))
+    if not clean.strip():
+        return 0
+    if "\n" in clean:
+        count = 0
+        for part in clean.split("\n"):
+            part = part.strip()
+            if not part:
+                continue
+            count += _estimate_wrapped_line_count(draw, part, max_width, font)
+        return count
+
+    avg_char_width = max(1.0, font.size * 0.55)
+    chars_per_line = max(1, int(max_width / avg_char_width))
+    lines = textwrap.wrap(clean, width=chars_per_line)
+    return max(1, len(lines))
 
 
 def _draw_profile_circle(img: Image.Image, y_center: int):
@@ -462,16 +734,57 @@ def _create_cover_slide(
 
     # Slide counter (1/N) in top-right
     _draw_slide_counter(draw, 1, total_slides)
+    _draw_brand_logo_badge(img, draw, template)
 
     px = LAYOUT["padding_x"]
     max_w = SLIDE_WIDTH - 2 * px
 
-    # === TITLE TAG (short hook in accent color, centered) ===
+    # === Cover text layout with protected CTA zone ===
     title_text = slide.get("title", "").upper()
-    title_font = _get_font(FONT_SIZES["cover_title"], bold=True)
-    title_y = int(SLIDE_HEIGHT * 0.56)
+    subtitle_text = (slide.get("subtitle", "") or "").upper()
+
+    cta_font = _get_font(20, bold=True)
+    cta_text = "-DESLIZA PARA CONOCER TODOS LOS DETALLES-"
+    cta_bbox = draw.textbbox((0, 0), cta_text, font=cta_font)
+    cta_h = cta_bbox[3] - cta_bbox[1]
+    cta_y = int(SLIDE_HEIGHT * 0.945)
+    # Keep a safe margin above CTA so long headlines never collide with it.
+    cta_safe_top = cta_y - 24
+
+    title_size = FONT_SIZES["cover_title"]
+    subtitle_size = 52 if subtitle_text else 0
+    title_min = 58
+    subtitle_min = 36
+    block_start_y = int(SLIDE_HEIGHT * 0.56)
+
+    def _estimate_cover_block_height(t_size: int, s_size: int) -> int:
+        title_font_local = _get_font(t_size, bold=True)
+        title_lines = _estimate_wrapped_line_count(draw, title_text, max_w, title_font_local)
+        _, title_step = _line_metrics(draw, title_font_local, 1.2)
+        total_h = max(1, title_lines) * title_step
+
+        if subtitle_text and s_size > 0:
+            subtitle_font_local = _get_font(s_size, bold=True)
+            subtitle_lines = _estimate_bicolor_line_count(draw, subtitle_text, max_w, subtitle_font_local)
+            _, subtitle_step = _line_metrics(draw, subtitle_font_local, 1.20)
+            total_h += 18 + (max(1, subtitle_lines) * subtitle_step)
+        return total_h
+
+    available_h = cta_safe_top - block_start_y
+    estimated_h = _estimate_cover_block_height(title_size, subtitle_size)
+    while estimated_h > available_h and (subtitle_size > subtitle_min or title_size > title_min):
+        if subtitle_text and subtitle_size > subtitle_min:
+            subtitle_size -= 2
+        elif title_size > title_min:
+            title_size -= 2
+        estimated_h = _estimate_cover_block_height(title_size, subtitle_size)
+
+    if estimated_h > available_h:
+        block_start_y = max(int(SLIDE_HEIGHT * 0.46), cta_safe_top - estimated_h)
 
     # Center the title tag
+    title_font = _get_font(title_size, bold=True)
+    title_y = block_start_y
     title_bbox = draw.textbbox((0, 0), title_text, font=title_font)
     title_w = title_bbox[2] - title_bbox[0]
 
@@ -496,26 +809,21 @@ def _create_cover_slide(
         title_y += title_bbox[3] - title_bbox[1] + 10
 
     # === SUBTITLE / HEADLINE (bicolor: white + accent highlights, centered) ===
-    subtitle_text = slide.get("subtitle", "")
     if subtitle_text:
-        subtitle_text = subtitle_text.upper()
-        subtitle_font = _get_font(52, bold=True)
-        subtitle_y = title_y + 15
+        subtitle_font = _get_font(subtitle_size, bold=True)
+        subtitle_y = title_y + 18
 
         end_y = _draw_bicolor_text_centered(
             draw, subtitle_text, subtitle_y, max_w,
-            subtitle_font, template["title_color"], template["accent_color"],
+            subtitle_font, template["title_color"], template["accent_color"], line_spacing=1.20,
         )
     else:
         end_y = title_y
 
     # === CTA: "DESLIZA PARA CONOCER TODOS LOS DETALLES" ===
-    cta_font = _get_font(20, bold=True)
-    cta_text = "-DESLIZA PARA CONOCER TODOS LOS DETALLES-"
-    cta_bbox = draw.textbbox((0, 0), cta_text, font=cta_font)
+    cta_y = min(cta_y, SLIDE_HEIGHT - cta_h - 18)
     cta_w = cta_bbox[2] - cta_bbox[0]
     cta_x = (SLIDE_WIDTH - cta_w) // 2
-    cta_y = int(SLIDE_HEIGHT * 0.93)
     draw.text((cta_x, cta_y), cta_text, font=cta_font, fill=template["accent_color"])
 
     return img
@@ -524,15 +832,24 @@ def _create_cover_slide(
 def _apply_darkened_background(img: Image.Image, draw: ImageDraw.Draw, template: dict, ai_bg: Image.Image | None):
     """Apply AI background heavily darkened, or fall back to gradient."""
     bg = template["background"]
-    _draw_gradient(draw, SLIDE_WIDTH, SLIDE_HEIGHT, bg["color_top"], bg["color_bottom"])
+    if bg.get("type") == "solid":
+        draw.rectangle(
+            [0, 0, SLIDE_WIDTH, SLIDE_HEIGHT],
+            fill=bg.get("color_top", (10, 10, 12)),
+        )
+    else:
+        _draw_gradient(draw, SLIDE_WIDTH, SLIDE_HEIGHT, bg["color_top"], bg["color_bottom"])
 
     if ai_bg is not None:
-        # Composite the AI image with heavy darkening (opacity ~20-25%)
+        # Composite the AI image as subtle texture.
         dark_overlay = Image.new("RGBA", (SLIDE_WIDTH, SLIDE_HEIGHT), (0, 0, 0, 0))
         dark_overlay.paste(ai_bg, (0, 0))
-        # Reduce opacity to ~22% so it's a subtle texture
+        if template.get("style") == "editorial_clean":
+            opacity = 0.10
+        else:
+            opacity = 0.22
         alpha = dark_overlay.split()[3]
-        alpha = alpha.point(lambda p: int(p * 0.22))
+        alpha = alpha.point(lambda p: int(p * opacity))
         dark_overlay.putalpha(alpha)
         composite = Image.alpha_composite(img, dark_overlay)
         img.paste(composite)
@@ -550,19 +867,15 @@ def _create_content_slide(
 
     px = LAYOUT["padding_x"]
     max_w = SLIDE_WIDTH - 2 * px
+    editorial_mode = template.get("style") == "editorial_clean"
 
-    # Slide number
-    num_font = _get_font(FONT_SIZES["slide_number"], bold=True)
-    number_text = f"{slide.get('number', slide_index)}/{total_slides - 2}"  # exclude cover and CTA
-    draw.text(
-        (px, int(SLIDE_HEIGHT * LAYOUT["slide_number_y"])),
-        number_text,
-        font=num_font,
-        fill=template["slide_number_color"],
-    )
+    # Unified slide counter style (top-right pill): 1/8, 2/8, ...
+    _draw_slide_counter(draw, slide_index + 1, total_slides)
+    _draw_brand_logo_badge(img, draw, template)
 
     # Title (with highlight support)
-    title_font = _get_font(FONT_SIZES["slide_title"], bold=True)
+    title_size = FONT_SIZES["slide_title"] + (4 if editorial_mode else 0)
+    title_font = _get_font(title_size, bold=True)
     title_y = int(SLIDE_HEIGHT * LAYOUT["title_y"])
     end_y = _draw_text_wrapped(
         draw, slide.get("title", ""), px, title_y, max_w,
@@ -570,12 +883,39 @@ def _create_content_slide(
         highlight_color=template["accent_color"],
     )
 
-    # Accent line
-    _draw_accent_line(draw, template, end_y + 15)
+    # Accent line (disabled in minimalist editorial mode)
+    if not editorial_mode:
+        _draw_accent_line(draw, template, end_y + 15)
 
     # Body text (with highlight support)
-    body_font = _get_font(FONT_SIZES["slide_body"])
-    body_y = end_y + 45
+    body_size = FONT_SIZES["slide_body"] + (2 if editorial_mode else 0)
+    body_font = _get_font(body_size)
+    body_y = end_y + (34 if editorial_mode else 45)
+
+    if editorial_mode and template.get("content_image_card"):
+        # Keep top as text and reserve a rounded visual card in the lower area.
+        card_x = px - 6
+        card_w = SLIDE_WIDTH - 2 * card_x
+        card_h = int(SLIDE_HEIGHT * 0.34)
+        card_y = int(SLIDE_HEIGHT * 0.56)
+        card_source = ai_background
+        if card_source is None:
+            # Graceful fallback so editorial layout remains stable without AI image.
+            card_source = Image.new("RGBA", (SLIDE_WIDTH, SLIDE_HEIGHT), (16, 22, 40, 255))
+            card_draw = ImageDraw.Draw(card_source)
+            _draw_gradient(card_draw, SLIDE_WIDTH, SLIDE_HEIGHT, (20, 30, 58), (34, 44, 82))
+
+        _draw_image_card(
+            img,
+            draw,
+            card_source,
+            card_x,
+            card_y,
+            card_w,
+            card_h,
+            template["accent_color"],
+        )
+
     _draw_text_wrapped(
         draw, slide.get("body", ""), px, body_y, max_w,
         body_font, template["body_color"], line_spacing=LAYOUT["line_spacing"],
@@ -601,6 +941,8 @@ def _create_cta_slide(
 
     px = LAYOUT["padding_x"]
     max_w = SLIDE_WIDTH - 2 * px
+    _draw_slide_counter(draw, total_slides, total_slides)
+    _draw_brand_logo_badge(img, draw, template)
 
     # CTA title (with highlight support)
     title_font = _get_font(FONT_SIZES["cta_title"], bold=True)
@@ -689,7 +1031,8 @@ def create(content: dict, template_index: int | None = None, topic: dict | None 
 
             if image_prompt:
                 from modules.image_generator import generate_cover_background
-                ai_cover_bg = generate_cover_background(image_prompt)
+                topic_hint = topic.get("topic_en", topic.get("topic", "technology"))
+                ai_cover_bg = generate_cover_background(image_prompt, topic_hint=topic_hint)
 
             if ai_cover_bg:
                 logger.info("AI cover background ready")
@@ -701,8 +1044,7 @@ def create(content: dict, template_index: int | None = None, topic: dict | None 
         # Generate shared content/CTA background
         try:
             from modules.image_generator import generate_content_background
-            topic_en = topic.get("topic_en", topic.get("topic", "technology"))
-            ai_content_bg = generate_content_background(topic_en)
+            ai_content_bg = generate_content_background(topic)
             if ai_content_bg:
                 logger.info("AI content background ready")
             else:

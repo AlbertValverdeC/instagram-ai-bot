@@ -1,0 +1,42 @@
+{
+  "newsapi_domains": "",
+  "rss_feeds": [
+    "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada",
+    "https://e00-elmundo.uecdn.es/elmundo/rss/portada.xml",
+    "https://www.eldiario.es/rss/",
+    "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+    "https://techcrunch.com/feed/",
+    "https://www.theverge.com/rss/index.xml",
+    "https://feeds.arstechnica.com/arstechnica/index",
+    "https://www.technologyreview.com/feed/"
+  ],
+  "subreddits": [
+    "artificial",
+    "technology",
+    "ChatGPT",
+    "claude",
+    "IA",
+    "gemini"
+  ],
+  "trends_keywords": [
+    "AI",
+    "GPT",
+    "robot",
+    "tech",
+    "app",
+    "Google",
+    "Apple",
+    "Meta",
+    "Microsoft",
+    "quantum",
+    "cyber",
+    "cloud",
+    "data",
+    "neural",
+    "OpenAI",
+    "startup",
+    "software",
+    "claude"
+  ]
+}

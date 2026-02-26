@@ -3,7 +3,7 @@ Content generation module: creates carousel text content using OpenAI.
 
 Generates:
   - Cover slide (hook title + subtitle)
-  - 6 content slides (one key point each, concise text)
+  - 6 content slides (one key point each, texto explicativo con contexto)
   - CTA slide (call-to-action)
   - Instagram caption (with storytelling structure)
   - Alt text for accessibility
@@ -27,76 +27,52 @@ logger = logging.getLogger(__name__)
 
 # ── Default fallback prompt (editable via dashboard) ─────────────────────────
 
-_DEFAULT_CONTENT_FALLBACK = """Eres creador/a de contenido VIRAL para una cuenta de Instagram en español sobre Tech/IA.
-Crea un carrusel IRRESISTIBLE sobre el siguiente tema.
+_DEFAULT_CONTENT_FALLBACK = """Eres editor/a de carruseles para la marca de Instagram "TechTokio ⚡ 30s".
+
+IDENTIDAD DE MARCA:
+- Aura Neo-Tokio: informativo, nocturno, moderno.
+- Tono: directo, afilado, con humor inteligente, cero humo.
+- Promesa: "entérate antes, entiéndelo fácil, guárdalo para usarlo mañana".
 
 TOPIC: {topic}
 KEY POINTS: {key_points}
 CONTEXT: {context}
 
-Genera un carrusel con exactamente {total_slides} slides (1 cover + {num_content_slides} contenido + 1 CTA).
+Genera exactamente {total_slides} slides (1 cover + {num_content_slides} contenido + 1 CTA).
 
-FORMATO DEL COVER (muy importante):
-- "title": etiqueta/gancho CORTO de 3-5 palabras (ej: "LA IA NO PARA", "ESTO CAMBIA TODO")
-- "subtitle": titular PRINCIPAL (15-25 palabras) con **doble asterisco** SOLO en 1 o 2 FRASES CLAVE que deben ir en otro color. Lo resaltado debe ser la parte de shock/acción/emoción.
-
-EJEMPLOS DE COVER:
-- title: "LA IA NO PARA", subtitle: "AQUÍ TIENES LAS **NOTICIAS MÁS IMPORTANTES** DE LOS ÚLTIMOS 7 DÍAS"
-- title: "ALERTA TECH", subtitle: "OPENAI ACABA DE **LANZAR GPT-5** Y LO CAMBIA TODO EN LA IA"
-- title: "NO VAS A CREERLO", subtitle: "GOOGLE **ELIMINARÁ 10.000 EMPLEOS** POR CULPA DE LA IA"
-- title: "OJO CON ESTO", subtitle: "META **DEJÓ QUE UNA IA BORRARA** TODA LA BASE DE DATOS POR ERROR"
-
-FÓRMULAS DE HOOK VIRAL para el subtítulo:
-1. SHOCK: abre con un dato impactante "**80% DE PROGRAMADORES** SERÁN REEMPLAZADOS EN 2026"
-2. PREGUNTA: "¿SABÍAS QUE LA IA YA PUEDE **REEMPLAZAR A TU MÉDICO**?"
-3. PROMESA: "5 HERRAMIENTAS IA QUE **TE AHORRAN 10 HORAS** POR SEMANA"
-4. MITO/ERROR: "ESTÁS USANDO CHATGPT **COMPLETAMENTE MAL** Y NO LO SABES"
-5. CURIOSIDAD: "GOOGLE ACABA DE HACER ALGO **INCREÍBLE** CON LA IA"
-
-ESTRUCTURA NARRATIVA (MUY IMPORTANTE):
-- Planifica los {num_content_slides} slides de contenido como una HISTORIA COHERENTE con flujo lógico, no como hechos aislados
-- Arco sugerido: Slide 1 = Qué pasó/noticia → Slides 2-3 = Detalles y datos clave → Slides 4-5 = Por qué importa/impacto → Slide 6 = Qué viene ahora/conclusión
-- Cada slide DEBE ser AUTOCONTENIDO: debe entregar una idea completa. NUNCA dejes preguntas abiertas ni "lo veremos luego"
-- Si un slide menciona un problema, debe incluir también respuesta o contexto en ese mismo slide
-- Cada slide debe aportar VALOR CONCRETO: dato, número, insight práctico o conclusión clara
-- Prioriza DATOS ESPECÍFICOS sobre hype: nombres, cifras, fechas, porcentajes, comparaciones, precios
-- Evita repetir ideas: cada slide debe aportar información NUEVA
+OBJETIVO:
+- Resumir de forma fiel la noticia y sus puntos clave.
+- Aportar valor en cada slide para que se entienda sin leer el artículo completo.
 
 REGLAS:
-- Todo el texto en ESPAÑOL y MAYÚSCULAS para title/subtitle del cover
-- Cada slide de contenido: máximo 32 palabras
-- Resaltados con ** (MUY IMPORTANTE):
-  - Cover subtitle: máximo 2 fragmentos resaltados
-  - Slides de contenido/CTA: máximo 1 fragmento resaltado por campo (title o body)
-  - Nunca resaltes frases largas: 2-4 palabras por resaltado
-- Maquetación del body (MUY IMPORTANTE):
-  - Escribe en bloques cortos: 2-4 líneas breves separadas con saltos de línea `\n` cuando ayude a la lectura
-  - Evita párrafos largos tipo "muro de texto"
-  - Si el slide es de pasos o instrucciones, usa lista numerada: `1. ...\n2. ...\n3. ...`
-- Claridad y valor (OBLIGATORIO):
-  - No inventes etiquetas ambiguas o grandilocuentes sin explicar (ej: "agentes del caos")
-  - Cada slide debe dejar una idea cerrada: qué es + por qué importa + dato concreto
-  - Si aparece un término técnico, explícalo en lenguaje simple dentro del mismo slide
-  - No inventes datos fuera de KEY POINTS/CONTEXT; si falta una cifra, no la fabriques
-  - Cada slide de contenido debe corresponder al key point del mismo orden (slide 1 ↔ key point 1, etc.)
-  - Cada body debe incluir al menos un dato verificable del key point (número, empresa, producto, organismo o fecha)
-  - Evita frases vacías tipo "increíble/revolucionario" si no van acompañadas de evidencia
-- Usa datos concretos: números, nombres, fechas
-- Tono: directo, potente, ligeramente provocador — NO aburrido ni genérico
-- Slides de contenido: una idea clara por slide, fácil de entender
-- Slide CTA: crear urgencia — "Guarda AHORA antes de que...", "Sígueme para no perderte..."
-- Usa emojis relevantes con moderación (1-2 por slide)
+- No inventes datos ni contexto fuera de KEY POINTS/CONTEXT.
+- Mantén el alcance exacto de la noticia; no la sobredimensiones.
+- Cada slide de contenido corresponde al key point del mismo orden.
+- Cada slide de contenido: entre 38 y 65 palabras.
+- Evita bodies tipo titular de una sola línea.
+- Cada body debe desarrollar la idea con profundidad real:
+  - hecho concreto del tema,
+  - contexto para entenderlo,
+  - implicación práctica o consecuencia.
+- Prohibido usar muletillas/plantillas tipo "Por qué importa:", "Dato clave:".
+- Si aplica, usa 2 bloques cortos separados por salto de línea para mejorar lectura.
+- Cover:
+  - title: 3-5 palabras, contundente y clickbait.
+  - subtitle: 12-24 palabras, preciso, con gancho y sin exagerar hechos.
+- Resaltados con **:
+  - cover subtitle: máximo 2 fragmentos.
+  - contenido/CTA: máximo 1 fragmento por campo.
+  - cada resaltado: 2-4 palabras.
+- Títulos de contenido:
+  - Deben ser concretos y entendibles por sí solos.
+  - No uses prefijos/etiquetas artificiales ni códigos (ej: RADAR, TOOL, 速報, 判定).
+- Body claro y directo; evita relleno.
+- CTA orientado a guardar, comentar y seguir.
+- Caption: 250-500 caracteres, con hook inicial y pregunta final.
+- Incluye el sello de marca "TechTokio ⚡ 30s" una vez (CTA o caption).
+- Genera también alt_text y 5 hashtags.
 
-REGLAS DEL CAPTION:
-- Empieza con pregunta HOOK o afirmación fuerte (nunca con descripción plana)
-- 300-500 caracteres con estructura hook → contexto → pregunta CTA
-- Termina con una pregunta que invite comentarios
-
-También genera:
-- Alt text para accesibilidad (describe el contenido en 1-2 frases)
-- 5 hashtags contextuales específicos de este tema
-
-Responde en este formato JSON exacto:
+Responde en JSON exacto:
 {{
     "slides": [
         {{
@@ -237,14 +213,9 @@ def _limit_highlights(text: str, max_segments: int, max_words_per_segment: int) 
 
 
 def _clarify_ambiguous_text(text: str) -> str:
-    """Replace vague labels with clearer wording for standalone comprehension."""
+    """Light text cleanup without topic-specific rewrites."""
     clean = str(text or "")
-    clean = re.sub(
-        r"\bagentes del caos\b",
-        "agentes autónomos con comportamiento impredecible",
-        clean,
-        flags=re.IGNORECASE,
-    )
+    clean = re.sub(r"[ \t]+", " ", clean).strip()
     return clean
 
 
@@ -286,12 +257,102 @@ _GENERIC_CONTENT_TOKENS = {
     "interacciones",
 }
 
+_TITLE_STOPWORDS = {
+    "el", "la", "los", "las", "de", "del", "un", "una", "y", "en", "con", "para",
+    "que", "por", "se", "su", "sus", "como", "más", "mas", "al", "lo", "ya",
+    "this", "that", "with", "from", "into", "over", "under", "today",
+}
+
+_TITLE_VERB_TOKENS = {
+    "es", "son", "fue", "fueron", "será", "serán",
+    "puede", "pueden", "podrá", "podrán",
+    "ofrece", "ofrecen", "ofreció", "ofrecerá",
+    "presenta", "presentan", "presentó",
+    "viene", "vienen", "vino",
+    "permite", "permiten", "permitió",
+    "busca", "buscan", "mejora", "mejora", "mejoran",
+    "integra", "integran", "usa", "usan", "tiene", "tienen",
+    "interactúa", "interactúan", "interactuar",
+}
+
+_TITLE_LABEL_PREFIX_RE = re.compile(
+    r"^\s*(?:\[\s*)?(?:速報|判定|radar|tool|alerta|tag|label|etiqueta)\s*(?:\]\s*)?[:\-–—]\s*",
+    flags=re.IGNORECASE,
+)
+
 
 def _compact_fact(text: str, max_words: int = 20) -> str:
     words = str(text or "").split()
     if len(words) <= max_words:
         return " ".join(words)
     return " ".join(words[:max_words]) + "..."
+
+
+def _word_count(text: str) -> int:
+    """Count words in text, ignoring punctuation-only tokens."""
+    return len(re.findall(r"[A-Za-zÀ-ÿ0-9]+", str(text or "")))
+
+
+def _title_case_token(token: str) -> str:
+    """Keep acronyms as-is and title-case normal tokens."""
+    if len(token) <= 4 and token.isupper():
+        return token
+    if token.isdigit():
+        return token
+    return token[:1].upper() + token[1:].lower()
+
+
+def _title_from_key_point(key_point: str, number: int) -> str:
+    """Build a concrete short title from the key point when model title is weak."""
+    tokens = re.findall(r"[A-Za-zÀ-ÿ0-9]+", str(key_point or ""))
+    picked = []
+    for tok in tokens:
+        low = tok.lower()
+        if low in _TITLE_STOPWORDS:
+            continue
+        if low in _TITLE_VERB_TOKENS:
+            continue
+        picked.append(_title_case_token(tok))
+        if len(picked) >= 5:
+            break
+    if not picked:
+        return f"Clave {number}"
+    return " ".join(picked[:4])
+
+
+def _normalize_content_title(title: str, key_point: str, number: int) -> str:
+    """
+    Remove artificial label prefixes and guarantee a meaningful title.
+    """
+    clean = _safe_text(title)
+    # Remove repeated label-like prefixes (e.g. "RADAR: ...", "速報: ...")
+    while True:
+        updated = _TITLE_LABEL_PREFIX_RE.sub("", clean).strip()
+        if updated == clean:
+            break
+        clean = updated
+
+    generic_patterns = (
+        r"^punto\s+clave\b",
+        r"^slide\s+\d+\b",
+        r"^content\b",
+        r"^dato\s+clave\b",
+        r"^tema\b",
+    )
+    if not clean:
+        return _title_from_key_point(key_point, number)
+    if any(re.search(pat, clean, flags=re.IGNORECASE) for pat in generic_patterns):
+        return _title_from_key_point(key_point, number)
+
+    # If title is too short and vague, rebuild from key point.
+    if _word_count(clean) <= 2 and _word_count(key_point) >= 6:
+        return _title_from_key_point(key_point, number)
+    # If title is too sentence-like (verb-heavy), rebuild as noun phrase.
+    title_tokens = [t.lower() for t in re.findall(r"[A-Za-zÀ-ÿ0-9]+", clean)]
+    verb_hits = sum(1 for t in title_tokens if t in _TITLE_VERB_TOKENS)
+    if verb_hits >= 1 and len(title_tokens) >= 4:
+        return _title_from_key_point(key_point, number)
+    return clean
 
 
 def _ensure_body_grounded(body: str, key_point: str) -> str:
@@ -317,7 +378,7 @@ def _ensure_body_grounded(body: str, key_point: str) -> str:
     fact = _compact_fact(point_clean, max_words=18)
     if not body_clean:
         return fact
-    return f"{body_clean}\nDato clave: {fact}"
+    return f"{body_clean}\n{fact}"
 
 
 def _has_missing_slide_text(content: dict) -> bool:
@@ -382,7 +443,7 @@ def _normalize_content(content: dict, topic: dict) -> dict:
     for i in range(NUM_CONTENT_SLIDES):
         src = content_src[i] if i < len(content_src) else {}
         point = key_points[i] if i < len(key_points) else "Dato clave para entender este tema."
-        title = _safe_text(src.get("title")) or f"PUNTO CLAVE {i + 1}"
+        title = _normalize_content_title(_safe_text(src.get("title")), point, i + 1)
         body = _safe_text(src.get("body")) or point
         body = _ensure_body_grounded(body, point)
         title = _clarify_ambiguous_text(title)
@@ -433,6 +494,133 @@ def _normalize_content(content: dict, topic: dict) -> dict:
         "alt_text": alt_text,
         "hashtag_suggestions": hashtags,
     }
+
+
+def _refine_content_titles_with_llm(client: OpenAI, normalized: dict, topic: dict) -> dict:
+    """
+    Run a lightweight title-polish pass to keep content slide titles natural and meaningful.
+    Falls back silently to existing titles on any failure.
+    """
+    try:
+        slides = normalized.get("slides", [])
+        content_slides = [s for s in slides if s.get("type") == "content"]
+        if len(content_slides) != NUM_CONTENT_SLIDES:
+            return normalized
+
+        key_points = [str(x).strip() for x in topic.get("key_points", []) if str(x).strip()]
+        current_titles = [str(s.get("title", "")).strip() for s in content_slides]
+
+        payload = {
+            "topic": topic.get("topic", ""),
+            "key_points": key_points[:NUM_CONTENT_SLIDES],
+            "current_titles": current_titles,
+        }
+        prompt = (
+            "Reescribe los 6 títulos de slides de un carrusel en español.\n"
+            "Objetivo: títulos naturales, concretos y fáciles de entender.\n"
+            "Reglas obligatorias:\n"
+            "- Devuelve exactamente 6 títulos en el mismo orden.\n"
+            "- Cada título: 2 a 5 palabras.\n"
+            "- Formato nominal (evita verbos conjugados y frases raras).\n"
+            "- No usar prefijos/etiquetas tipo RADAR, TOOL, 速報, 判定.\n"
+            "- No usar comillas, emojis ni dos puntos.\n"
+            "- Deben reflejar fielmente cada key point, sin inventar.\n"
+            "Responde JSON exacto con esta forma:\n"
+            '{"titles":["...","...","...","...","...","..."]}\n\n'
+            f"DATOS:\n{json.dumps(payload, ensure_ascii=False)}"
+        )
+
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(resp.choices[0].message.content)
+        titles = data.get("titles")
+        if not isinstance(titles, list) or len(titles) != NUM_CONTENT_SLIDES:
+            return normalized
+
+        polished = [re.sub(r"\s+", " ", str(t or "")).strip() for t in titles]
+        if any(not t for t in polished):
+            return normalized
+
+        # Apply polished titles back in order.
+        idx = 0
+        for slide in slides:
+            if slide.get("type") == "content":
+                slide["title"] = polished[idx]
+                idx += 1
+        return normalized
+    except Exception:
+        return normalized
+
+
+def _refine_content_bodies_with_llm(client: OpenAI, normalized: dict, topic: dict) -> dict:
+    """
+    Rewrite content bodies for depth and clarity (without repetitive templates).
+    Falls back silently if the refinement fails.
+    """
+    try:
+        slides = normalized.get("slides", [])
+        content_slides = [s for s in slides if s.get("type") == "content"]
+        if len(content_slides) != NUM_CONTENT_SLIDES:
+            return normalized
+
+        key_points = [str(x).strip() for x in topic.get("key_points", []) if str(x).strip()]
+        bodies = [str(s.get("body", "")).strip() for s in content_slides]
+        titles = [str(s.get("title", "")).strip() for s in content_slides]
+
+        payload = {
+            "topic": topic.get("topic", ""),
+            "context": topic.get("why", ""),
+            "key_points": key_points[:NUM_CONTENT_SLIDES],
+            "titles": titles,
+            "current_bodies": bodies,
+        }
+        prompt = (
+            "Reescribe los 6 textos de body de un carrusel en español para que aporten profundidad real.\n"
+            "Objetivo: que al terminar los 6 slides, el lector entienda la noticia sin leer el artículo original.\n"
+            "Reglas obligatorias:\n"
+            "- Devuelve exactamente 6 bodies en el mismo orden.\n"
+            "- Cada body entre 38 y 65 palabras.\n"
+            "- Cada body debe incluir: hecho concreto + contexto explicativo + consecuencia/uso práctico.\n"
+            "- No inventar datos fuera de key_points/context.\n"
+            "- No repetir frases entre slides.\n"
+            "- No usar plantillas literales como 'Por qué importa:' o 'Dato clave:'.\n"
+            "- Español claro, directo, sin relleno.\n"
+            "Responde JSON exacto con esta forma:\n"
+            '{"bodies":["...","...","...","...","...","..."]}\n\n'
+            f"DATOS:\n{json.dumps(payload, ensure_ascii=False)}"
+        )
+
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.35,
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(resp.choices[0].message.content)
+        refined = data.get("bodies")
+        if not isinstance(refined, list) or len(refined) != NUM_CONTENT_SLIDES:
+            return normalized
+
+        clean_refined = []
+        for body in refined:
+            text = _clean_punctuation_spacing(str(body or ""), keep_newlines=True)
+            wc = _word_count(text)
+            if wc < 28:
+                return normalized
+            clean_refined.append(text)
+
+        idx = 0
+        for slide in slides:
+            if slide.get("type") == "content":
+                slide["body"] = clean_refined[idx]
+                idx += 1
+        return normalized
+    except Exception:
+        return normalized
 
 
 def generate(topic: dict) -> dict:
@@ -521,6 +709,8 @@ def generate(topic: dict) -> dict:
             raise ValueError(f"Invalid content structure: expected slides, got {list(content.keys())}")
 
     repaired = _normalize_content(content, topic)
+    repaired = _refine_content_titles_with_llm(client, repaired, topic)
+    repaired = _refine_content_bodies_with_llm(client, repaired, topic)
     if _has_missing_slide_text(content):
         logger.warning("Content had empty slide fields. Applied automatic repair to avoid blank slides.")
 
@@ -536,16 +726,16 @@ if __name__ == "__main__":
 
     # Test with a sample topic
     sample_topic = {
-        "topic": "OpenAI lanza GPT-5 con razonamiento avanzado",
-        "topic_en": "OpenAI launches GPT-5 with advanced reasoning",
-        "why": "Major AI model release with significant improvements",
+        "topic": "Nueva función de IA en móviles",
+        "topic_en": "New AI feature in smartphones",
+        "why": "Actualización reciente con impacto práctico para usuarios",
         "key_points": [
-            "GPT-5 supera a GPT-4 en un 40% en benchmarks de razonamiento",
-            "Nuevo modo de 'pensamiento profundo' para problemas complejos",
-            "Disponible en ChatGPT Plus y API desde el primer día",
-            "Capacidad multimodal mejorada: texto, imagen, audio y video",
-            "Precio de API reducido un 50% respecto a GPT-4",
-            "OpenAI afirma que es un paso hacia AGI",
+            "La nueva función automatiza tareas cotidianas desde el móvil.",
+            "Se despliega primero en dispositivos recientes de gama alta.",
+            "Reduce pasos manuales en acciones frecuentes.",
+            "Mejora precisión al aprender de patrones de uso.",
+            "La industria lo ve como señal de mayor integración de IA en consumo.",
+            "Se esperan más apps compatibles en próximas semanas.",
         ],
     }
 

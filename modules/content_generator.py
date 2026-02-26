@@ -58,7 +58,9 @@ REGLAS:
 - Prohibido usar muletillas/plantillas tipo "Por qué importa:", "Dato clave:".
 - Si aplica, usa 2 bloques cortos separados por salto de línea para mejorar lectura.
 - Cover:
-  - title: 3-5 palabras, contundente y clickbait.
+  - title: 3-6 palabras, contundente y clickbait.
+    OBLIGATORIO: el nombre/marca/producto principal del topic DEBE aparecer en el título.
+    Ejemplo: si el topic es sobre Claude → "Claude" debe estar en el título.
   - subtitle: 12-24 palabras, preciso, con gancho y sin exagerar hechos.
 - Resaltados con **:
   - cover subtitle: máximo 2 fragmentos.
@@ -78,7 +80,7 @@ Responde en JSON exacto:
     "slides": [
         {{
             "type": "cover",
-            "title": "GANCHO CORTO (3-5 palabras)",
+            "title": "GANCHO CORTO (3-6 palabras, incluir nombre/marca del topic)",
             "subtitle": "TITULAR PRINCIPAL CON **FRASES CLAVE RESALTADAS** EN DOBLE ASTERISCO"
         }},
         {{
@@ -126,6 +128,39 @@ Responde en JSON exacto:
     "caption": "Caption de Instagram que empieza con un HOOK",
     "alt_text": "Descripción accesible del carrusel",
     "hashtag_suggestions": ["#hashtag1", "#hashtag2", "#hashtag3", "#hashtag4", "#hashtag5"]
+}}"""
+
+_DEFAULT_PROPOSALS_FALLBACK = """Eres estratega editorial para Instagram.
+
+TOPIC: {topic}
+WHY: {why}
+KEY_POINTS: {key_points}
+
+Devuelve EXACTAMENTE {count} propuestas distintas para el post.
+Cada propuesta debe tener un ángulo diferente y ser fiel al topic.
+
+Reglas:
+- No inventar datos fuera de TOPIC/WHY/KEY_POINTS.
+- Escribir en español natural, directo y claro.
+- Cada propuesta debe incluir:
+  - id: short id (p1, p2, p3...)
+  - angle: nombre corto del enfoque
+  - hook: frase gancho
+  - caption_preview: 160-280 caracteres
+  - cta: frase CTA final
+- Evita repetir textos entre propuestas.
+
+Responde JSON exacto:
+{{
+  "proposals": [
+    {{
+      "id": "p1",
+      "angle": "Enfoque principal",
+      "hook": "Gancho inicial",
+      "caption_preview": "Texto de preview",
+      "cta": "CTA"
+    }}
+  ]
 }}"""
 
 
@@ -432,6 +467,122 @@ def _build_content_fallback_prompt(
         )
 
 
+def _build_proposals_prompt(topic: dict, count: int) -> str:
+    """Build prompt for stage-1 text proposals."""
+    topic_text = _safe_text(topic.get("topic")) or "Tema sin título"
+    why_text = _safe_text(topic.get("why"))
+    key_points = topic.get("key_points") or []
+    if not isinstance(key_points, list):
+        key_points = []
+    key_points_text = json.dumps([_safe_text(x) for x in key_points], ensure_ascii=False)
+    return _DEFAULT_PROPOSALS_FALLBACK.format(
+        topic=topic_text,
+        why=why_text,
+        key_points=key_points_text,
+        count=max(1, int(count or 1)),
+    )
+
+
+def _call_json_completion(
+    client: OpenAI,
+    prompt: str,
+    *,
+    temperature: float = 0.45,
+    retry_with_low_temperature: bool = True,
+) -> dict:
+    """Execute a JSON-only completion with one optional retry."""
+    prompt_text = str(prompt or "")
+    if "json" not in prompt_text.lower():
+        prompt_text += "\n\nRespond in valid JSON format."
+
+    temperatures = [temperature]
+    if retry_with_low_temperature:
+        temperatures.append(0.2)
+
+    last_err = None
+    for idx, temp in enumerate(temperatures, start=1):
+        try:
+            resp = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[{"role": "user", "content": prompt_text}],
+                temperature=temp,
+                response_format={"type": "json_object"},
+            )
+            return json.loads(resp.choices[0].message.content)
+        except Exception as e:
+            last_err = e
+            if idx < len(temperatures):
+                logger.warning(
+                    "Content JSON decode/call failed (attempt %d/%d). Retrying with lower temperature.",
+                    idx,
+                    len(temperatures),
+                )
+    raise last_err
+
+
+def _normalize_proposals(raw: object, count: int, topic_text: str) -> list[dict]:
+    """Normalize proposal payload to exactly count items."""
+    out = []
+    proposals = raw if isinstance(raw, list) else []
+    for idx, item in enumerate(proposals[:count], start=1):
+        if not isinstance(item, dict):
+            continue
+        angle = _safe_text(item.get("angle")) or f"Enfoque {idx}"
+        hook = _safe_text(item.get("hook"))
+        caption_preview = _safe_text(item.get("caption_preview"))
+        cta = _safe_text(item.get("cta"))
+        if not hook and not caption_preview:
+            continue
+        out.append(
+            {
+                "id": _safe_text(item.get("id")) or f"p{idx}",
+                "angle": angle,
+                "hook": hook or angle,
+                "caption_preview": caption_preview or hook,
+                "cta": cta or "¿Qué opinas? Te leo en comentarios.",
+            }
+        )
+
+    fallback_idx = len(out) + 1
+    while len(out) < count:
+        out.append(
+            {
+                "id": f"p{fallback_idx}",
+                "angle": f"Enfoque {fallback_idx}",
+                "hook": f"Lo clave de {_safe_text(topic_text) or 'esta noticia'}",
+                "caption_preview": "Resumen claro del impacto y por qué importa ahora.",
+                "cta": "Guárdalo para revisarlo más tarde.",
+            }
+        )
+        fallback_idx += 1
+
+    return out[:count]
+
+
+def _build_proposal_context(proposal: dict | None) -> str:
+    """Render selected proposal context as plain text for final generation."""
+    if not isinstance(proposal, dict):
+        return ""
+    fields = {
+        "id": _safe_text(proposal.get("id")),
+        "angle": _safe_text(proposal.get("angle")),
+        "hook": _safe_text(proposal.get("hook")),
+        "caption_preview": _safe_text(proposal.get("caption_preview")),
+        "cta": _safe_text(proposal.get("cta")),
+    }
+    if not any(fields.values()):
+        return ""
+    return (
+        "ENFOQUE SELECCIONADO POR USUARIO:\n"
+        f"- ID: {fields['id'] or '-'}\n"
+        f"- Ángulo: {fields['angle'] or '-'}\n"
+        f"- Hook: {fields['hook'] or '-'}\n"
+        f"- Caption preview: {fields['caption_preview'] or '-'}\n"
+        f"- CTA: {fields['cta'] or '-'}\n"
+        "Instrucción: mantén fidelidad factual, pero alinea el tono y el gancho a este enfoque."
+    )
+
+
 def _is_viable_director_content_prompt(prompt_text: str) -> bool:
     """
     Basic prompt sanity-check to avoid burning a full generation call on weak prompts.
@@ -676,7 +827,23 @@ def _refine_content_bodies_with_llm(client: OpenAI, normalized: dict, topic: dic
         return normalized
 
 
-def generate(topic: dict) -> dict:
+def generate_text_proposals(topic: dict, count: int = 3) -> list[dict]:
+    """
+    Generate stage-1 copy proposals to let users choose a direction.
+    """
+    safe_count = max(1, min(int(count or 3), 5))
+    topic_text = _safe_text(topic.get("topic")) or "este tema"
+    logger.info("Generating %d text proposals for: %s", safe_count, topic_text)
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    prompt = _build_proposals_prompt(topic, safe_count)
+    payload = _call_json_completion(client, prompt, temperature=0.55, retry_with_low_temperature=True)
+    proposals = _normalize_proposals(payload.get("proposals"), safe_count, topic_text)
+    logger.info("Generated %d proposals", len(proposals))
+    return proposals
+
+
+def generate(topic: dict, proposal: dict | None = None) -> dict:
     """
     Generate full carousel content from a topic.
 
@@ -686,16 +853,20 @@ def generate(topic: dict) -> dict:
     Returns:
         dict with keys: slides, caption, alt_text, hashtag_context
     """
-    logger.info(f"Generating content for: {topic['topic']}")
+    topic_text = _safe_text(topic.get("topic")) or "Tema sin título"
+    proposal_angle = _safe_text((proposal or {}).get("angle")) if isinstance(proposal, dict) else ""
+    if proposal_angle:
+        logger.info("Generating content for: %s (proposal angle: %s)", topic_text, proposal_angle)
+    else:
+        logger.info("Generating content for: %s", topic_text)
 
     client = OpenAI(api_key=OPENAI_API_KEY)
 
     # Pre-compute variables for .format()
     total_slides = NUM_CONTENT_SLIDES + 2
     num_content_slides = NUM_CONTENT_SLIDES
-    topic_text = topic['topic']
-    key_points_text = json.dumps(topic['key_points'], ensure_ascii=False)
-    context_text = topic.get('why', '')
+    key_points_text = json.dumps(topic.get("key_points", []), ensure_ascii=False)
+    context_text = topic.get("why", "")
 
     # Build stable fallback prompt first; this remains the default path.
     fallback_prompt = _build_content_fallback_prompt(
@@ -724,40 +895,20 @@ def generate(topic: dict) -> dict:
         logger.info("Content director disabled (CONTENT_USE_DIRECTOR=false). Using fallback prompt.")
 
     prompt = director_prompt or fallback_prompt
+    proposal_context = _build_proposal_context(proposal)
+    if proposal_context:
+        prompt = f"{prompt}\n\n{proposal_context}"
 
-    def _call_openai(p, *, temperature: float = 0.45):
-        # OpenAI requires the word "json" in messages when using json_object format
-        if "json" not in p.lower():
-            p += "\n\nRespond in valid JSON format."
-        # Two-attempt decode to reduce transient malformed JSON responses.
-        temps = [temperature, 0.2]
-        last_err = None
-        for idx, temp in enumerate(temps, start=1):
-            try:
-                resp = client.chat.completions.create(
-                    model=OPENAI_MODEL,
-                    messages=[{"role": "user", "content": p}],
-                    temperature=temp,
-                    response_format={"type": "json_object"},
-                )
-                return json.loads(resp.choices[0].message.content)
-            except Exception as e:
-                last_err = e
-                if idx < len(temps):
-                    logger.warning(
-                        "Content JSON decode/call failed (attempt %d/%d). Retrying with lower temperature.",
-                        idx,
-                        len(temps),
-                    )
-        raise last_err
-
-    content = _call_openai(prompt)
+    content = _call_json_completion(client, prompt, temperature=0.45, retry_with_low_temperature=True)
 
     # Validate structure/text — if director prompt produced bad output, retry with hardcoded
     if "slides" not in content or len(content.get("slides", [])) < 3 or _has_missing_slide_text(content):
         if director_prompt:
             logger.warning("Director prompt produced invalid/incomplete content. Retrying with fallback prompt.")
-            content = _call_openai(fallback_prompt)
+            retry_prompt = fallback_prompt
+            if proposal_context:
+                retry_prompt = f"{retry_prompt}\n\n{proposal_context}"
+            content = _call_json_completion(client, retry_prompt, temperature=0.45, retry_with_low_temperature=True)
             if "slides" not in content or len(content.get("slides", [])) < 3:
                 raise ValueError(f"Invalid content structure: {list(content.keys())}")
         else:

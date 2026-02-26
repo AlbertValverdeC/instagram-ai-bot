@@ -53,10 +53,10 @@ export function Controls({
             type="button"
             disabled={running}
             onClick={() => onRun('live')}
-            title="Pipeline completo + publicación real en Instagram. Requiere todas las API keys configuradas."
+            title="Nivel 4: flujo end-to-end completo (research + contenido + diseño + publicación real en Instagram)."
             className="rounded-md border border-red-500/50 bg-red-500/10 px-4 py-2 text-sm font-bold text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.2)] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Live Bot
+            Nivel 4 · E2E Live
           </button>
         </div>
 
@@ -88,7 +88,7 @@ export function Controls({
             className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-background-dark transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span className="material-symbols-outlined text-[18px]">auto_awesome</span>
-            Generar
+            Solo Research
           </button>
         </div>
       </div>

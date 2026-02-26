@@ -3,11 +3,15 @@ import type {
   ApiStateResponse,
   ApiStatusResponse,
   DbStatusResponse,
+  DraftResponse,
+  PostDetailResponse,
   PostsResponse,
+  ProposalsResponse,
   PromptItem,
   ResearchConfig,
   ResearchConfigResponse,
   RunResponse,
+  TextProposal,
   SyncMetricsResponse
 } from '../types';
 
@@ -58,6 +62,16 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify({ topic })
     }),
+  generateProposals: (payload: { topic?: string; count?: number }) =>
+    apiFetch<ProposalsResponse>('/api/proposals', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  createDraft: (payload: { topic: Record<string, unknown>; proposal: TextProposal; template?: number }) =>
+    apiFetch<DraftResponse>('/api/drafts', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
   getKeys: () => apiFetch<ApiKeyItem[]>('/api/keys'),
   saveKeys: (payload: Record<string, string>) =>
     apiFetch<{ saved: number }>('/api/keys', {
@@ -87,6 +101,12 @@ export const apiClient = {
       body: JSON.stringify({})
     }),
   getPosts: (limit = 20) => apiFetch<PostsResponse>(`/api/posts?limit=${limit}`),
+  getPostDetail: (postId: number) => apiFetch<PostDetailResponse>(`/api/posts/${postId}`),
+  publishPost: (postId: number) =>
+    apiFetch<{ media_id?: string; status?: string }>('/api/posts/' + postId + '/publish', {
+      method: 'POST',
+      body: JSON.stringify({})
+    }),
   retryPublish: (postId: number) =>
     apiFetch<{ media_id?: string; status?: string }>('/api/posts/' + postId + '/retry-publish', {
       method: 'POST',

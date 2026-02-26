@@ -12,6 +12,7 @@ from dashboard.services.pipeline_runner import (
 
 try:
     from modules.post_store import (
+        PUBLISHABLE_STATUSES,
         RETRYABLE_STATUSES,
         ensure_schema as ensure_post_store_schema,
         get_db_runtime_info as get_post_store_db_runtime_info,
@@ -22,6 +23,7 @@ try:
         mark_post_published as db_mark_post_published,
     )
 except Exception:
+    PUBLISHABLE_STATUSES = {"draft", "generated", "publish_error"}
     RETRYABLE_STATUSES = {"generated", "publish_error"}
     ensure_post_store_schema = None
     get_post_store_db_runtime_info = None
@@ -43,30 +45,7 @@ except Exception:
 bp = Blueprint("posts_routes", __name__)
 
 
-@bp.get("/api/posts")
-def api_posts():
-    auth_error = require_api_token()
-    if auth_error:
-        return auth_error
-
-    if ensure_post_store_schema is None or db_list_posts is None:
-        return jsonify({"error": "Post store module unavailable"}), 500
-
-    try:
-        ensure_post_store_schema()
-        limit = int((request.args.get("limit") or "20").strip() or "20")
-        rows = db_list_posts(limit=limit)
-        return jsonify({"posts": rows})
-    except Exception as e:
-        return jsonify({"error": f"No se pudo cargar publicaciones: {e}"}), 500
-
-
-@bp.post("/api/posts/<int:post_id>/retry-publish")
-def api_posts_retry_publish(post_id: int):
-    auth_error = require_api_token()
-    if auth_error:
-        return auth_error
-
+def _publish_post(post_id: int, *, allowed_statuses: set[str], status_error_label: str):
     missing = [
         name
         for name, ref in {
@@ -92,21 +71,19 @@ def api_posts_retry_publish(post_id: int):
         return jsonify({"error": f"Post {post_id} no encontrado"}), 404
 
     status = str(post.get("status") or "").strip()
-    if status not in RETRYABLE_STATUSES:
+    if status not in allowed_statuses:
         return (
             jsonify(
                 {
                     "error": (
-                        f"El post {post_id} no es reintentable en estado '{status}'. "
-                        f"Estados válidos: {sorted(RETRYABLE_STATUSES)}"
+                        f"El post {post_id} no es {status_error_label} en estado '{status}'. "
+                        f"Estados válidos: {sorted(allowed_statuses)}"
                     )
                 }
             ),
             400,
         )
 
-    # Safety net: before re-publishing, try to reconcile pending rows that were
-    # actually published on Instagram but DB wasn't updated.
     if db_reconcile_pending_posts is not None:
         try:
             db_reconcile_pending_posts(limit=60, max_age_hours=72)
@@ -124,7 +101,6 @@ def api_posts_retry_publish(post_id: int):
                     }
                 )
         except Exception:
-            # If reconciliation fails, continue with explicit retry publish.
             pass
 
     topic = post.get("topic_payload") if isinstance(post.get("topic_payload"), dict) else {"topic": post.get("topic")}
@@ -135,7 +111,7 @@ def api_posts_retry_publish(post_id: int):
             jsonify(
                 {
                     "error": (
-                        "No hay payload suficiente para reintentar este post. "
+                        "No hay payload suficiente para publicar este post. "
                         "Falta content_payload o strategy_payload."
                     )
                 }
@@ -172,6 +148,68 @@ def api_posts_retry_publish(post_id: int):
                 p.unlink(missing_ok=True)
         except Exception:
             pass
+
+
+@bp.get("/api/posts")
+def api_posts():
+    auth_error = require_api_token()
+    if auth_error:
+        return auth_error
+
+    if ensure_post_store_schema is None or db_list_posts is None:
+        return jsonify({"error": "Post store module unavailable"}), 500
+
+    try:
+        ensure_post_store_schema()
+        limit = int((request.args.get("limit") or "20").strip() or "20")
+        rows = db_list_posts(limit=limit)
+        return jsonify({"posts": rows})
+    except Exception as e:
+        return jsonify({"error": f"No se pudo cargar publicaciones: {e}"}), 500
+
+
+@bp.get("/api/posts/<int:post_id>")
+def api_post_detail(post_id: int):
+    auth_error = require_api_token()
+    if auth_error:
+        return auth_error
+
+    if ensure_post_store_schema is None or db_get_post is None:
+        return jsonify({"error": "Post store module unavailable"}), 500
+
+    try:
+        ensure_post_store_schema()
+        post = db_get_post(post_id)
+    except Exception as e:
+        return jsonify({"error": f"No se pudo cargar publicación {post_id}: {e}"}), 500
+
+    if not post:
+        return jsonify({"error": f"Post {post_id} no encontrado"}), 404
+    return jsonify({"post": post})
+
+
+@bp.post("/api/posts/<int:post_id>/publish")
+def api_posts_publish(post_id: int):
+    auth_error = require_api_token()
+    if auth_error:
+        return auth_error
+    return _publish_post(
+        post_id,
+        allowed_statuses=set(PUBLISHABLE_STATUSES),
+        status_error_label="publicable",
+    )
+
+
+@bp.post("/api/posts/<int:post_id>/retry-publish")
+def api_posts_retry_publish(post_id: int):
+    auth_error = require_api_token()
+    if auth_error:
+        return auth_error
+    return _publish_post(
+        post_id,
+        allowed_statuses=set(RETRYABLE_STATUSES),
+        status_error_label="reintentable",
+    )
 
 
 @bp.get("/api/db-status")

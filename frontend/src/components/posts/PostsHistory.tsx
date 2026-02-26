@@ -9,7 +9,9 @@ interface PostsHistoryProps {
   syncColor: 'green' | 'orange' | 'red' | 'dim';
   syncing: boolean;
   onSync: () => void;
+  onPublish: (postId: number) => void;
   onRetry: (postId: number) => void;
+  onOpen: (postId: number) => void;
 }
 
 function fmtDate(iso?: string | null): string {
@@ -30,6 +32,7 @@ function fmtNum(value: unknown): string {
 
 function statusLabel(status?: string): string {
   const labels: Record<string, string> = {
+    draft: 'draft',
     generated: 'pendiente',
     publish_error: 'error',
     published_active: 'activo',
@@ -40,6 +43,7 @@ function statusLabel(status?: string): string {
 }
 
 function statusClass(status?: string): string {
+  if (status === 'draft') return 'bg-sky-400/10 text-sky-300 border-sky-400/20';
   if (status === 'published_active' || status === 'published') return 'bg-emerald-400/10 text-emerald-400 border-emerald-400/20';
   if (status === 'published_deleted') return 'bg-orange/10 text-orange border-orange/20';
   if (status === 'publish_error') return 'bg-red/10 text-red border-red/20';
@@ -48,6 +52,10 @@ function statusClass(status?: string): string {
 
 function canRetry(status?: string): boolean {
   return status === 'generated' || status === 'publish_error';
+}
+
+function canPublish(status?: string): boolean {
+  return status === 'draft';
 }
 
 function textColor(color: 'green' | 'orange' | 'red' | 'dim'): string {
@@ -66,7 +74,9 @@ export function PostsHistory({
   syncColor,
   syncing,
   onSync,
+  onPublish,
   onRetry,
+  onOpen,
 }: PostsHistoryProps) {
   return (
     <section className="mb-6 overflow-hidden rounded-xl border border-border-dark bg-secondary-dark shadow-lg">
@@ -150,17 +160,33 @@ export function PostsHistory({
                       {post.last_error_tag || '-'}
                     </td>
                     <td className="border-b border-border-dark/50 px-3 py-3">
-                      {canRetry(post.status as string) ? (
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => onRetry(post.id)}
+                          onClick={() => onOpen(post.id)}
                           className="rounded-md border border-border-dark bg-surface-dark px-3 py-1 text-xs font-semibold text-text-subtle transition hover:border-primary hover:text-primary"
                         >
-                          Reintentar
+                          Abrir
                         </button>
-                      ) : (
-                        '-'
-                      )}
+                        {canPublish(post.status as string) && (
+                          <button
+                            type="button"
+                            onClick={() => onPublish(post.id)}
+                            className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300 transition hover:border-emerald-400 hover:text-emerald-200"
+                          >
+                            Publicar
+                          </button>
+                        )}
+                        {canRetry(post.status as string) && (
+                          <button
+                            type="button"
+                            onClick={() => onRetry(post.id)}
+                            className="rounded-md border border-border-dark bg-surface-dark px-3 py-1 text-xs font-semibold text-text-subtle transition hover:border-primary hover:text-primary"
+                          >
+                            Reintentar
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -1,5 +1,14 @@
 export type PipelineStatus = 'idle' | 'running' | 'done' | 'error';
 
+export interface TextProposal {
+  id: string;
+  angle: string;
+  hook: string;
+  caption_preview: string;
+  cta: string;
+  [key: string]: unknown;
+}
+
 export interface TopicPayload {
   topic?: string;
   topic_en?: string;
@@ -19,6 +28,7 @@ export interface ContentPayload {
 export interface ApiStateResponse {
   topic: TopicPayload | null;
   content: ContentPayload | null;
+  proposals?: TextProposal[];
   slides: string[];
   history_count: number;
 }
@@ -38,6 +48,21 @@ export interface RunResponse {
   error_summary?: string | null;
   output_tail?: string;
   topic?: string;
+}
+
+export interface ProposalsResponse {
+  topic: TopicPayload;
+  proposals: TextProposal[];
+}
+
+export interface DraftResponse {
+  post_id: number;
+  status: string;
+  topic: TopicPayload;
+  proposal: TextProposal;
+  content: ContentPayload;
+  strategy?: Record<string, unknown>;
+  slides: string[];
 }
 
 export interface ApiKeyItem {
@@ -103,11 +128,21 @@ export interface PostRecord {
   ig_media_id?: string | null;
   published_at?: string | null;
   created_at?: string | null;
+  topic_payload?: Record<string, unknown> | null;
+  proposal_payload?: Record<string, unknown> | null;
+  content_payload?: Record<string, unknown> | null;
+  strategy_payload?: Record<string, unknown> | null;
+  source_urls?: string[];
+  metrics?: Record<string, unknown> | null;
   [key: string]: unknown;
 }
 
 export interface PostsResponse {
   posts: PostRecord[];
+}
+
+export interface PostDetailResponse {
+  post: PostRecord;
 }
 
 export interface DbStatusResponse {

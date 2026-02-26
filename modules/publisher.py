@@ -758,44 +758,46 @@ def publish(image_paths: list[Path], content: dict, strategy: dict) -> str:
     logger.info("Step 1/3: Resolving public image URLs...")
     image_urls = upload_images(image_paths)
 
-    # Step 2: Create carousel items
-    logger.info("Step 2/3: Creating carousel items...")
-    item_ids = []
-    for idx, url in enumerate(image_urls, start=1):
-        item_id = _create_carousel_item(url)
-        # Ensure child containers are fully processed before creating parent carousel.
-        _wait_container_ready(
-            item_id,
-            kind=f"carousel_item_{idx}",
-            max_attempts=8,
-            sleep_seconds=2.0,
-        )
-        item_ids.append(item_id)
-        time.sleep(1)
+    # Steps 2+3: Create carousel items, container, and publish.
+    # On transient errors (e.g. 2207032), retry the FULL flow (new items + new container).
+    full_retries = 3
+    for full_attempt in range(1, full_retries + 1):
+        # Step 2: Create carousel items
+        logger.info("Step 2/3: Creating carousel items... (attempt %d/%d)", full_attempt, full_retries)
+        item_ids = []
+        for idx, url in enumerate(image_urls, start=1):
+            item_id = _create_carousel_item(url)
+            _wait_container_ready(
+                item_id,
+                kind=f"carousel_item_{idx}",
+                max_attempts=8,
+                sleep_seconds=2.0,
+            )
+            item_ids.append(item_id)
+            time.sleep(1)
 
-    # Step 3: Create and publish carousel (retry on transient container errors)
-    logger.info("Step 3/3: Publishing carousel...")
-    container_retries = 3
-    for container_attempt in range(1, container_retries + 1):
+        # Step 3: Create and publish carousel
+        logger.info("Step 3/3: Publishing carousel...")
         container_id = _create_carousel_container(item_ids, full_caption)
         try:
             media_id = _publish_container(container_id, expected_caption=full_caption)
             return media_id
         except RuntimeError as e:
-            if "[transient]" in str(e) and container_attempt < container_retries:
+            if "[transient]" in str(e) and full_attempt < full_retries:
+                wait = 30 * full_attempt
                 logger.warning(
-                    "Transient container error (attempt %d/%d): %s. "
-                    "Re-creating container in %ds...",
-                    container_attempt,
-                    container_retries,
+                    "Transient error (attempt %d/%d): %s. "
+                    "Re-creating items + container in %ds...",
+                    full_attempt,
+                    full_retries,
                     str(e)[:200],
-                    15 * container_attempt,
+                    wait,
                 )
-                time.sleep(15 * container_attempt)
+                time.sleep(wait)
                 continue
             raise
 
-    raise RuntimeError("Carousel publish failed after container retries")
+    raise RuntimeError("Carousel publish failed after full retries")
 
 
 # ── History Management ───────────────────────────────────────────────────────

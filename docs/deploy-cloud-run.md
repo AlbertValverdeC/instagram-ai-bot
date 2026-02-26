@@ -24,6 +24,7 @@ Qué hace:
 - Despliega servicio `techtokio-dashboard` (o el nombre que pongas).
 - Carga variables desde `.env`.
 - Genera `DASHBOARD_API_TOKEN` si no existe.
+- Fuerza `PUBLIC_IMAGE_BASE_URL` a la URL real del servicio Cloud Run.
 
 ## 3) Programar ejecución diaria (`mode=live`)
 
@@ -60,3 +61,6 @@ gcloud scheduler jobs run techtokio-live-daily --location europe-west1
 
 - El servicio queda online 24/7 sin usar tu PC.
 - Si cambias claves/tokens, vuelve a ejecutar `deploy_cloud_run.sh`.
+- Seguridad dashboard: si `DASHBOARD_API_TOKEN` está definido, todas las rutas `/api/*` requieren header `X-API-Token`.
+- En la UI web, configura el token en la esquina superior derecha (`API token dashboard`) para operar el panel.
+- En Cloud Run el pipeline se ejecuta en modo síncrono por defecto para evitar que se corte en background.

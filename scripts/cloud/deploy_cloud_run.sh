@@ -156,7 +156,7 @@ upsert_env PUBLIC_IMAGE_BASE_URL "${SERVICE_URL}"
 echo
 echo "Deploy completado."
 echo "URL: ${SERVICE_URL}"
-echo "Token dashboard (guárdalo): ${token}"
+echo "Token dashboard: configurado (no se muestra por seguridad)."
 echo "PUBLIC_IMAGE_BASE_URL fijado a: ${SERVICE_URL}"
 echo
 echo "Siguiente paso: scripts/cloud/setup_scheduler.sh"

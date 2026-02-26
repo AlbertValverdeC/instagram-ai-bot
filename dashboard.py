@@ -47,21 +47,25 @@ def _require_api_token():
         or (request.args.get("token") or "").strip()
     )
 
-    # Allow same-origin browser calls from the dashboard UI without forcing
-    # users to manually inject headers in the web app.
-    host = (request.host_url or "").rstrip("/")
-    origin = (request.headers.get("Origin") or "").rstrip("/")
-    referer = request.headers.get("Referer") or ""
-    same_origin = bool(
-        (origin and origin == host)
-        or (host and referer.startswith(host + "/"))
-    )
-    if same_origin:
-        return None
-
     if provided != _DASHBOARD_API_TOKEN:
-        return jsonify({"error": "Unauthorized"}), 401
+        return jsonify({"error": "Unauthorized: token faltante o invalido"}), 401
     return None
+
+
+def _pipeline_execution_mode() -> str:
+    """
+    Determine pipeline execution mode.
+
+    - "sync": run in-request (reliable for Cloud Run lifecycle)
+    - "thread": background thread (better local UX)
+    """
+    raw = (os.getenv("PIPELINE_EXECUTION_MODE") or "").strip().lower()
+    if raw in {"sync", "thread"}:
+        return raw
+    # Cloud Run: keep request open to avoid background work being throttled/killed.
+    if os.getenv("K_SERVICE"):
+        return "sync"
+    return "thread"
 
 # ── Prompts metadata ─────────────────────────────────────────────────────────
 
@@ -455,6 +459,10 @@ def _run_pipeline(mode: str, template: int | None, topic: str | None = None, ste
 
 @app.route("/api/state")
 def api_state():
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
     topic = None
     topic_file = DATA_DIR / "last_topic.json"
     if topic_file.exists():
@@ -510,6 +518,18 @@ def api_run():
         _state["finished_at"] = None
         _state["mode"] = mode if not topic else f"{mode} (topic: {topic})"
 
+    if _pipeline_execution_mode() == "sync":
+        _run_pipeline(mode, template, topic)
+        with _lock:
+            elapsed = None
+            if _state["started_at"]:
+                elapsed = round((_state["finished_at"] or time.time()) - _state["started_at"], 1)
+            status = _state["status"]
+        return (
+            jsonify({"status": status, "mode": mode, "elapsed": elapsed}),
+            200 if status == "done" else 500,
+        )
+
     thread = threading.Thread(target=_run_pipeline, args=(mode, template, topic), daemon=True)
     thread.start()
     return jsonify({"status": "started", "mode": mode})
@@ -538,6 +558,18 @@ def api_search_topic():
         _state["finished_at"] = None
         _state["mode"] = f"research-only (topic: {topic})"
 
+    if _pipeline_execution_mode() == "sync":
+        _run_pipeline("dry-run", None, topic, "research")
+        with _lock:
+            elapsed = None
+            if _state["started_at"]:
+                elapsed = round((_state["finished_at"] or time.time()) - _state["started_at"], 1)
+            status = _state["status"]
+        return (
+            jsonify({"status": status, "mode": "research-only", "topic": topic, "elapsed": elapsed}),
+            200 if status == "done" else 500,
+        )
+
     thread = threading.Thread(
         target=_run_pipeline,
         args=("dry-run", None, topic, "research"),
@@ -549,6 +581,10 @@ def api_search_topic():
 
 @app.route("/api/status")
 def api_status():
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
     with _lock:
         elapsed = None
         if _state["started_at"]:
@@ -565,6 +601,10 @@ def api_status():
 @app.route("/api/keys", methods=["GET"])
 def api_keys_get():
     """Return all API keys (masked) with their config metadata."""
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
     env = _read_env()
     keys = []
     for cfg in API_KEYS_CONFIG:
@@ -618,6 +658,10 @@ def api_keys_save():
 @app.route("/api/prompts", methods=["GET"])
 def api_prompts_get():
     """Return all 6 prompts with metadata, current text, and custom flag."""
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
     defaults = _get_prompt_defaults()
     result = []
     for cfg in PROMPTS_CONFIG:
@@ -727,6 +771,10 @@ _DEFAULT_RESEARCH_CONFIG = {
 @app.route("/api/research-config", methods=["GET"])
 def api_research_config_get():
     """Return current research config (custom or defaults)."""
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
     config = dict(_DEFAULT_RESEARCH_CONFIG)
     is_custom = RESEARCH_CONFIG_FILE.exists()
     if is_custom:
@@ -818,6 +866,20 @@ body{
   font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;
 }
 .header-right{margin-left:auto;display:flex;gap:8px}
+.token-box{
+  display:flex;align-items:center;gap:6px;
+  background:var(--bg-code);border:1px solid var(--border);
+  border-radius:8px;padding:6px 8px;
+}
+.token-input{
+  width:220px;padding:6px 8px;
+  background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  color:var(--text);font-size:12px;font-family:monospace;
+}
+.token-input:focus{outline:none;border-color:var(--accent)}
+.token-state{
+  font-size:11px;color:var(--text-dim);white-space:nowrap;
+}
 
 .main{max-width:1280px;margin:0 auto;padding:24px 32px}
 
@@ -1229,6 +1291,15 @@ body{
       <a class="btn small" href="/docs" target="_blank" style="text-decoration:none">📖 Docs</a>
       <span class="tiptext">Abrir la documentaci&oacute;n completa en otra pesta&ntilde;a</span>
     </div>
+    <div class="tip">
+      <div class="token-box">
+        <input id="apiTokenInput" class="token-input" type="password" placeholder="API token dashboard" />
+        <button class="btn small" onclick="saveApiToken()">Guardar</button>
+        <button class="btn small" onclick="clearApiToken()">Limpiar</button>
+      </div>
+      <span class="tiptext">Solo cloud: token para autorizar APIs del panel. Se guarda localmente en este navegador.</span>
+    </div>
+    <span class="token-state" id="tokenState">Token: no configurado</span>
   </div>
 </div>
 
@@ -1392,29 +1463,65 @@ body{
 </div>
 
 <script>
-const DASHBOARD_API_TOKEN = __DASHBOARD_API_TOKEN_JSON__;
+const API_TOKEN_STORAGE_KEY = 'dashboard_api_token';
 
-// Auto-attach API token for mutating dashboard API calls in cloud mode.
-if (DASHBOARD_API_TOKEN) {
-  const _origFetch = window.fetch.bind(window);
-  window.fetch = function(input, init = {}) {
-    const url = (typeof input === 'string')
-      ? input
-      : ((input && input.url) ? input.url : '');
-    const method = ((init && init.method) || 'GET').toUpperCase();
-    const isApiCall = url.startsWith('/api/');
-
-    if (!isApiCall || method === 'GET') {
-      return _origFetch(input, init);
-    }
-
-    const headers = new Headers(init.headers || {});
-    if (!headers.has('X-API-Token')) {
-      headers.set('X-API-Token', DASHBOARD_API_TOKEN);
-    }
-    return _origFetch(input, { ...init, headers });
-  };
+function getApiToken() {
+  return (localStorage.getItem(API_TOKEN_STORAGE_KEY) || '').trim();
 }
+
+function refreshTokenState() {
+  const token = getApiToken();
+  const state = document.getElementById('tokenState');
+  if (!state) return;
+  if (token) {
+    state.textContent = 'Token: configurado';
+    state.style.color = 'var(--green)';
+  } else {
+    state.textContent = 'Token: no configurado';
+    state.style.color = 'var(--text-dim)';
+  }
+}
+
+function saveApiToken() {
+  const input = document.getElementById('apiTokenInput');
+  if (!input) return;
+  const token = (input.value || '').trim();
+  if (!token) {
+    alert('Introduce un token antes de guardar.');
+    return;
+  }
+  localStorage.setItem(API_TOKEN_STORAGE_KEY, token);
+  input.value = '';
+  refreshTokenState();
+}
+
+function clearApiToken() {
+  localStorage.removeItem(API_TOKEN_STORAGE_KEY);
+  const input = document.getElementById('apiTokenInput');
+  if (input) input.value = '';
+  refreshTokenState();
+}
+
+// Auto-attach API token (if configured in localStorage) for dashboard API calls.
+const _origFetch = window.fetch.bind(window);
+window.fetch = function(input, init = {}) {
+  const url = (typeof input === 'string')
+    ? input
+    : ((input && input.url) ? input.url : '');
+  const isApiCall = url.startsWith('/api/');
+  if (!isApiCall) {
+    return _origFetch(input, init);
+  }
+  const token = getApiToken();
+  if (!token) {
+    return _origFetch(input, init);
+  }
+  const headers = new Headers(init.headers || {});
+  if (!headers.has('X-API-Token')) {
+    headers.set('X-API-Token', token);
+  }
+  return _origFetch(input, { ...init, headers });
+};
 
 let selectedTemplate = null;
 let polling = null;
@@ -1453,11 +1560,19 @@ async function run(mode) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body),
     });
+    const result = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const err = await res.json();
-      document.getElementById('output').textContent = `Error: ${err.error}`;
+      let errorText = result.error || `HTTP ${res.status}`;
+      if (res.status === 401 && !getApiToken()) {
+        errorText += '\nConfigura el token en la parte superior derecha.';
+      }
+      document.getElementById('output').textContent = `Error: ${errorText}`;
       setButtons(false);
       updateStatusUI('error');
+      return;
+    }
+    if (result.status !== 'started') {
+      await pollStatus();
       return;
     }
   } catch(e) {
@@ -1489,11 +1604,19 @@ async function searchTopicOnly() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ topic }),
     });
+    const result = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const err = await res.json();
-      document.getElementById('output').textContent = `Error: ${err.error}`;
+      let errorText = result.error || `HTTP ${res.status}`;
+      if (res.status === 401 && !getApiToken()) {
+        errorText += '\nConfigura el token en la parte superior derecha.';
+      }
+      document.getElementById('output').textContent = `Error: ${errorText}`;
       setButtons(false);
       updateStatusUI('error');
+      return;
+    }
+    if (result.status !== 'started') {
+      await pollStatus();
       return;
     }
   } catch(e) {
@@ -1510,6 +1633,19 @@ async function searchTopicOnly() {
 async function pollStatus() {
   try {
     const res = await fetch('/api/status');
+    if (!res.ok) {
+      if (res.status === 401) {
+        document.getElementById('output').textContent =
+          'Error: Unauthorized. Configura el token en la parte superior derecha.';
+      }
+      if (polling) {
+        clearInterval(polling);
+        polling = null;
+      }
+      setButtons(false);
+      updateStatusUI('error');
+      return;
+    }
     const data = await res.json();
     document.getElementById('output').textContent = data.output || 'Esperando output...';
     document.getElementById('elapsed').textContent = data.elapsed ? `${data.elapsed}s` : '';
@@ -1543,6 +1679,14 @@ function updateStatusUI(status) {
 async function loadState() {
   try {
     const res = await fetch('/api/state');
+    if (!res.ok) {
+      if (res.status === 401) {
+        const msg = 'Acceso no autorizado. Configura el token del dashboard.';
+        document.getElementById('topicContent').innerHTML = `<span class="empty-state">${msg}</span>`;
+        document.getElementById('slidesContent').innerHTML = `<span class="empty-state">${msg}</span>`;
+      }
+      return;
+    }
     const data = await res.json();
 
     // Topic
@@ -2035,14 +2179,36 @@ if (topicFocusInputEl) {
   });
 }
 
+const apiTokenInputEl = document.getElementById('apiTokenInput');
+if (apiTokenInputEl) {
+  apiTokenInputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveApiToken();
+    }
+  });
+}
+
+refreshTokenState();
 loadState();
-fetch('/api/status').then(r=>r.json()).then(d=>{
-  if(d.status==='running'){
-    setButtons(true);
-    updateStatusUI('running');
-    polling = setInterval(pollStatus, 1500);
-  }
-});
+fetch('/api/status')
+  .then(async r => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => ({})) }))
+  .then(({ ok, status, body }) => {
+    if (!ok) {
+      if (status === 401) {
+        document.getElementById('output').textContent =
+          'Error: Unauthorized. Configura el token en la parte superior derecha.';
+        updateStatusUI('error');
+      }
+      return;
+    }
+    if (body.status === 'running') {
+      setButtons(true);
+      updateStatusUI('running');
+      polling = setInterval(pollStatus, 1500);
+    }
+  })
+  .catch(() => {});
 </script>
 
 </body>
@@ -2051,10 +2217,7 @@ fetch('/api/status').then(r=>r.json()).then(d=>{
 
 @app.route("/")
 def dashboard():
-    return DASHBOARD_HTML.replace(
-        "__DASHBOARD_API_TOKEN_JSON__",
-        json.dumps(_DASHBOARD_API_TOKEN),
-    )
+    return DASHBOARD_HTML
 
 
 @app.route("/docs")

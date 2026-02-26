@@ -73,8 +73,9 @@ if gcloud scheduler jobs describe "${JOB_NAME}" --location "${SCHEDULER_LOCATION
     --time-zone "${TIMEZONE}" \
     --uri "${uri}" \
     --http-method POST \
-    --headers "${headers}" \
-    --message-body "${body}"
+    --update-headers "${headers}" \
+    --message-body "${body}" \
+    --quiet >/dev/null
   action="updated"
 else
   gcloud scheduler jobs create http "${JOB_NAME}" \
@@ -84,7 +85,8 @@ else
     --uri "${uri}" \
     --http-method POST \
     --headers "${headers}" \
-    --message-body "${body}"
+    --message-body "${body}" \
+    --quiet >/dev/null
   action="created"
 fi
 

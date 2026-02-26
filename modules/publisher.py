@@ -12,6 +12,7 @@ Flow:
 
 import json
 import logging
+import random
 import time
 from pathlib import Path
 from urllib.parse import quote
@@ -212,18 +213,134 @@ def _meta_error_text(resp: requests.Response) -> str:
     return " | ".join(parts)
 
 
-def _graph_post(path: str, data: dict, *, timeout: int = 30) -> dict:
-    resp = requests.post(f"{GRAPH_API_BASE}/{path.lstrip('/')}", data=data, timeout=timeout)
-    if not resp.ok:
-        raise RuntimeError(f"Meta POST {path} failed: {_meta_error_text(resp)}")
-    return resp.json()
+def _is_meta_transient_error(resp: requests.Response) -> bool:
+    """
+    Decide if a Meta Graph error is likely transient and should be retried.
+    """
+    if resp.status_code >= 500:
+        return True
+
+    try:
+        payload = resp.json()
+    except ValueError:
+        return False
+
+    err = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(err, dict):
+        return False
+
+    if bool(err.get("is_transient")):
+        return True
+
+    code = err.get("code")
+    # Common transient/rate/infra classes seen in Graph API
+    retryable_codes = {1, 2, 4, 17, 32, 613}
+    return code in retryable_codes
 
 
-def _graph_get(path: str, params: dict, *, timeout: int = 30) -> dict:
-    resp = requests.get(f"{GRAPH_API_BASE}/{path.lstrip('/')}", params=params, timeout=timeout)
-    if not resp.ok:
-        raise RuntimeError(f"Meta GET {path} failed: {_meta_error_text(resp)}")
-    return resp.json()
+def _retry_sleep(attempt: int, *, base: float = 1.0, cap: float = 12.0):
+    # Exponential backoff with small jitter to avoid burst retries.
+    delay = min(cap, base * (2 ** max(0, attempt - 1)))
+    delay += random.uniform(0.0, 0.4)
+    time.sleep(delay)
+
+
+def _graph_post(
+    path: str,
+    data: dict,
+    *,
+    timeout: int = 30,
+    retries: int = 4,
+) -> dict:
+    """
+    POST to Graph API with retries on transient Meta/HTTP/network failures.
+    """
+    url = f"{GRAPH_API_BASE}/{path.lstrip('/')}"
+    attempts = max(1, retries + 1)
+
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.post(url, data=data, timeout=timeout)
+        except requests.RequestException as exc:
+            if attempt >= attempts:
+                raise RuntimeError(f"Meta POST {path} network failure: {exc}") from exc
+            logger.warning(
+                "Meta POST %s network error (attempt %d/%d): %s. Reintentando...",
+                path,
+                attempt,
+                attempts,
+                exc,
+            )
+            _retry_sleep(attempt)
+            continue
+
+        if resp.ok:
+            return resp.json()
+
+        err_text = _meta_error_text(resp)
+        if attempt < attempts and _is_meta_transient_error(resp):
+            logger.warning(
+                "Meta POST %s error transitorio (attempt %d/%d): %s. Reintentando...",
+                path,
+                attempt,
+                attempts,
+                err_text,
+            )
+            _retry_sleep(attempt)
+            continue
+
+        raise RuntimeError(f"Meta POST {path} failed: {err_text}")
+
+    raise RuntimeError(f"Meta POST {path} failed after retries")
+
+
+def _graph_get(
+    path: str,
+    params: dict,
+    *,
+    timeout: int = 30,
+    retries: int = 3,
+) -> dict:
+    """
+    GET to Graph API with retries on transient Meta/HTTP/network failures.
+    """
+    url = f"{GRAPH_API_BASE}/{path.lstrip('/')}"
+    attempts = max(1, retries + 1)
+
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.get(url, params=params, timeout=timeout)
+        except requests.RequestException as exc:
+            if attempt >= attempts:
+                raise RuntimeError(f"Meta GET {path} network failure: {exc}") from exc
+            logger.warning(
+                "Meta GET %s network error (attempt %d/%d): %s. Reintentando...",
+                path,
+                attempt,
+                attempts,
+                exc,
+            )
+            _retry_sleep(attempt)
+            continue
+
+        if resp.ok:
+            return resp.json()
+
+        err_text = _meta_error_text(resp)
+        if attempt < attempts and _is_meta_transient_error(resp):
+            logger.warning(
+                "Meta GET %s error transitorio (attempt %d/%d): %s. Reintentando...",
+                path,
+                attempt,
+                attempts,
+                err_text,
+            )
+            _retry_sleep(attempt)
+            continue
+
+        raise RuntimeError(f"Meta GET {path} failed: {err_text}")
+
+    raise RuntimeError(f"Meta GET {path} failed after retries")
 
 
 def _create_carousel_item(image_url: str) -> str:

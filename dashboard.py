@@ -17,6 +17,20 @@ import time
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
+try:
+    from modules.post_store import (
+        ensure_schema as ensure_post_store_schema,
+        get_db_runtime_info as get_post_store_db_runtime_info,
+        list_posts as db_list_posts,
+    )
+except Exception:
+    ensure_post_store_schema = None
+    get_post_store_db_runtime_info = None
+    db_list_posts = None
+try:
+    from modules.metrics_sync import sync_recent_post_metrics as db_sync_post_metrics
+except Exception:
+    db_sync_post_metrics = None
 
 PROJECT_ROOT = Path(__file__).parent
 OUTPUT_DIR = PROJECT_ROOT / "output"
@@ -212,6 +226,15 @@ API_KEYS_CONFIG = [
         "secret": False,
     },
     {
+        "key": "CONTENT_USE_DIRECTOR",
+        "label": "Use Director in Content",
+        "hint": "true/false. Recomendado false para máxima estabilidad de JSON en contenido.",
+        "placeholder": "false",
+        "required": False,
+        "group": "AI Models",
+        "secret": False,
+    },
+    {
         "key": "NEWSAPI_KEY",
         "label": "NewsAPI Key",
         "hint": "Opcional. Se usa en backend legacy como fuente adicional.",
@@ -326,6 +349,23 @@ API_KEYS_CONFIG = [
         "placeholder": "",
         "required": False,
         "group": "Security",
+    },
+    {
+        "key": "DATABASE_URL",
+        "label": "Database URL",
+        "hint": "Base de datos de posts y métricas. En Cloud Run usa PostgreSQL (no SQLite). Ej: postgresql+psycopg://user:pass@host/db?sslmode=require",
+        "placeholder": "sqlite:///data/techtokio.db",
+        "required": False,
+        "group": "Storage",
+    },
+    {
+        "key": "DUPLICATE_TOPIC_WINDOW_DAYS",
+        "label": "Duplicate Topic Window Days",
+        "hint": "Bloqueo de temas repetidos por hash en ventana reciente (días).",
+        "placeholder": "90",
+        "required": False,
+        "group": "Storage",
+        "secret": False,
     },
     {
         "key": "INSTAGRAM_HANDLE",
@@ -489,6 +529,63 @@ def api_state():
         "slides": slides,
         "history_count": len(history),
     })
+
+
+@app.route("/api/posts")
+def api_posts():
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
+    if ensure_post_store_schema is None or db_list_posts is None:
+        return jsonify({"error": "Post store module unavailable"}), 500
+
+    try:
+        ensure_post_store_schema()
+        limit = int((request.args.get("limit") or "20").strip() or "20")
+        rows = db_list_posts(limit=limit)
+        return jsonify({"posts": rows})
+    except Exception as e:
+        return jsonify({"error": f"No se pudo cargar publicaciones: {e}"}), 500
+
+
+@app.route("/api/db-status")
+def api_db_status():
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
+    if get_post_store_db_runtime_info is None:
+        return jsonify({"error": "Post store module unavailable"}), 500
+
+    try:
+        info = get_post_store_db_runtime_info()
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({"error": f"No se pudo obtener estado DB: {e}"}), 500
+
+
+@app.route("/api/posts/sync-metrics", methods=["POST"])
+def api_posts_sync_metrics():
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
+    if db_sync_post_metrics is None:
+        return jsonify({"error": "Metrics sync module unavailable"}), 500
+
+    data = request.get_json(silent=True) or {}
+    raw_limit = data.get("limit", 20)
+    try:
+        limit = max(1, min(int(raw_limit), 200))
+    except Exception:
+        limit = 20
+
+    try:
+        result = db_sync_post_metrics(limit=limit)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": f"No se pudieron sincronizar métricas: {e}"}), 500
 
 
 @app.route("/api/run", methods=["POST"])
@@ -982,6 +1079,24 @@ body{
 .slides-grid img:hover{transform:scale(1.03);border-color:var(--accent)}
 @media(max-width:600px){.slides-grid{grid-template-columns:repeat(2,1fr)}}
 
+/* Posts table */
+.posts-table-wrap{overflow-x:auto}
+.posts-table{
+  width:100%;border-collapse:collapse;font-size:13px;
+}
+.posts-table th,.posts-table td{
+  text-align:left;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);
+  vertical-align:top;
+}
+.posts-table th{
+  font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim);font-weight:700;
+}
+.pill{
+  display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;
+  border:1px solid var(--border);background:var(--bg-code);color:var(--text-dim);
+}
+.mono{font-family:"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+
 /* Output console */
 .console{
   background:var(--bg-card);border:1px solid var(--border);
@@ -1387,6 +1502,19 @@ body{
     </div>
   </div>
 
+  <div class="card" style="margin-bottom:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px">
+      <div class="tip" style="display:inline-flex">
+        <h2>Publicaciones (DB)</h2>
+        <span class="tiptext">Historial persistente de publicaciones guardadas en la base de datos para evitar duplicados y analizar rendimiento.</span>
+      </div>
+      <button class="btn small" id="btnSyncMetrics" onclick="syncMetricsNow()">📈 Sync métricas IG</button>
+    </div>
+    <div id="dbStatusBanner" class="empty-state" style="font-style:normal;margin-bottom:8px"></div>
+    <div id="postsSyncMsg" class="empty-state" style="font-style:normal;margin-bottom:8px"></div>
+    <div id="postsContent" class="empty-state">Cargando...</div>
+  </div>
+
   <!-- Console -->
   <div class="console">
     <h2>
@@ -1684,6 +1812,12 @@ async function loadState() {
         const msg = 'Acceso no autorizado. Configura el token del dashboard.';
         document.getElementById('topicContent').innerHTML = `<span class="empty-state">${msg}</span>`;
         document.getElementById('slidesContent').innerHTML = `<span class="empty-state">${msg}</span>`;
+        document.getElementById('postsContent').innerHTML = `<span class="empty-state">${msg}</span>`;
+        const dbBanner = document.getElementById('dbStatusBanner');
+        if (dbBanner) {
+          dbBanner.textContent = msg;
+          dbBanner.style.color = 'var(--orange)';
+        }
       }
       return;
     }
@@ -1719,8 +1853,156 @@ async function loadState() {
     } else {
       slidesEl.innerHTML = '<span class="empty-state">Sin slides. Ejecuta el pipeline para generarlos.</span>';
     }
+
+    await loadDbStatus();
+    await loadPosts();
   } catch(e) {
     console.error('Failed to load state:', e);
+  }
+}
+
+function fmtDate(iso) {
+  if (!iso) return '-';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString();
+  } catch(_) {
+    return iso;
+  }
+}
+
+function fmtNum(v) {
+  if (v === null || v === undefined || v === '') return '-';
+  const n = Number(v);
+  if (Number.isNaN(n)) return esc(String(v));
+  return n.toLocaleString();
+}
+
+async function loadDbStatus() {
+  const el = document.getElementById('dbStatusBanner');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/db-status');
+    if (!res.ok) {
+      if (res.status === 401) {
+        el.textContent = 'Acceso no autorizado.';
+      } else {
+        el.textContent = 'No se pudo obtener estado de base de datos.';
+      }
+      el.style.color = 'var(--orange)';
+      return;
+    }
+    const data = await res.json();
+    if (data.warning) {
+      el.textContent = `⚠️ ${data.warning}`;
+      el.style.color = 'var(--orange)';
+      return;
+    }
+    const dialect = data.dialect || 'unknown';
+    const mode = data.persistent_ok ? 'persistente' : 'no persistente';
+    el.textContent = `✅ DB ${dialect} (${mode})`;
+    el.style.color = 'var(--green)';
+  } catch (e) {
+    el.textContent = 'No se pudo obtener estado de base de datos.';
+    el.style.color = 'var(--orange)';
+  }
+}
+
+async function loadPosts() {
+  const postsEl = document.getElementById('postsContent');
+  if (!postsEl) return;
+  try {
+    const res = await fetch('/api/posts?limit=20');
+    if (!res.ok) {
+      if (res.status === 401) {
+        postsEl.innerHTML = '<span class="empty-state">Acceso no autorizado.</span>';
+      } else {
+        postsEl.innerHTML = '<span class="empty-state">No se pudieron cargar publicaciones.</span>';
+      }
+      return;
+    }
+    const data = await res.json();
+    const posts = data.posts || [];
+    if (!posts.length) {
+      postsEl.innerHTML = '<span class="empty-state">Sin publicaciones registradas aún.</span>';
+      return;
+    }
+
+    const rows = posts.map(p => `
+      <tr>
+        <td>${fmtDate(p.published_at)}</td>
+        <td>${esc(p.topic || '-')}</td>
+        <td><span class="pill">${esc(String(p.status || '-'))}</span></td>
+        <td>${p.virality_score ?? '-'}</td>
+        <td>${p.source_count ?? 0}</td>
+        <td>${fmtNum(p.likes)}</td>
+        <td>${fmtNum(p.comments)}</td>
+        <td>${fmtNum(p.reach)}</td>
+        <td>${p.engagement_rate == null ? '-' : Number(p.engagement_rate).toFixed(2) + '%'}</td>
+        <td>${fmtDate(p.metrics_collected_at)}</td>
+        <td class="mono">${esc(p.ig_media_id || '-')}</td>
+      </tr>
+    `).join('');
+
+    postsEl.innerHTML = `
+      <div class="posts-table-wrap">
+        <table class="posts-table">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Tema</th>
+              <th>Estado</th>
+              <th>Virality</th>
+              <th>Fuentes</th>
+              <th>Likes</th>
+              <th>Comentarios</th>
+              <th>Reach</th>
+              <th>ER</th>
+              <th>Métricas</th>
+              <th>IG Media ID</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    postsEl.innerHTML = '<span class="empty-state">Error cargando publicaciones.</span>';
+  }
+}
+
+async function syncMetricsNow() {
+  const btn = document.getElementById('btnSyncMetrics');
+  const msg = document.getElementById('postsSyncMsg');
+  if (!btn || !msg) return;
+  if (btn.disabled) return;
+
+  btn.disabled = true;
+  msg.textContent = 'Sincronizando métricas de Instagram...';
+  msg.style.color = 'var(--text-dim)';
+  try {
+    const res = await fetch('/api/posts/sync-metrics', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({limit: 30}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      msg.textContent = data.error || 'No se pudieron sincronizar métricas.';
+      msg.style.color = 'var(--red)';
+      return;
+    }
+    const checked = data.checked ?? 0;
+    const updated = data.updated ?? 0;
+    const failed = data.failed ?? 0;
+    msg.textContent = `Sync completado: revisados ${checked}, actualizados ${updated}, fallidos ${failed}.`;
+    msg.style.color = failed > 0 ? 'var(--orange)' : 'var(--green)';
+    await loadPosts();
+  } catch (e) {
+    msg.textContent = 'Error sincronizando métricas.';
+    msg.style.color = 'var(--red)';
+  } finally {
+    btn.disabled = false;
   }
 }
 

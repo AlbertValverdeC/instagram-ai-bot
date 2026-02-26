@@ -27,6 +27,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from config.settings import DATA_DIR, HISTORY_FILE, LOGS_DIR, OPENAI_API_KEY, OUTPUT_DIR
 from config.templates import TEMPLATES
+from modules.post_store import (
+    ensure_schema as ensure_post_store_schema,
+    find_duplicate_candidate,
+    get_db_runtime_info,
+    save_published_post,
+)
 
 logger = logging.getLogger("pipeline")
 
@@ -182,10 +188,26 @@ def daily_pipeline(
 
     _validate_required_keys(test_mode=test_mode, step=step)
 
+    db_info = get_db_runtime_info()
+    if db_info.get("warning"):
+        logger.warning("Post store DB warning: %s", db_info["warning"])
+    else:
+        logger.info(
+            "Post store DB: dialect=%s persistent_ok=%s",
+            db_info.get("dialect"),
+            db_info.get("persistent_ok"),
+        )
+
     topic = None
     content = None
     image_paths = None
     strategy = None
+
+    # Ensure DB schema exists for duplicate checks/history.
+    try:
+        ensure_post_store_schema()
+    except Exception as e:
+        logger.warning(f"Post store schema initialization failed: {e}")
 
     # ── Step 1: Research ─────────────────────────────────────────────────
     if step is None or step == "research":
@@ -201,6 +223,34 @@ def daily_pipeline(
         logger.info(f"  Virality: {topic.get('virality_score', 'N/A')}/10")
         for i, point in enumerate(topic["key_points"], 1):
             logger.info(f"  {i}. {point}")
+
+        duplicate = find_duplicate_candidate(
+            topic=topic.get("topic", ""),
+            source_urls=topic.get("source_urls", []),
+        )
+        if duplicate:
+            if duplicate["kind"] == "source_url":
+                msg = (
+                    "Duplicate detected by source URL. "
+                    f"Existing post #{duplicate.get('existing_post_id')} "
+                    f"({duplicate.get('existing_published_at')}) "
+                    f"for source {duplicate.get('source_url')}."
+                )
+            else:
+                msg = (
+                    "Duplicate detected by recent topic hash. "
+                    f"Existing post #{duplicate.get('existing_post_id')} "
+                    f"({duplicate.get('existing_published_at')}) within "
+                    f"{duplicate.get('window_days')} days."
+                )
+
+            if dry_run or test_mode:
+                logger.warning(msg)
+            else:
+                raise RuntimeError(
+                    msg
+                    + " Aborting LIVE run to avoid duplicate publication."
+                )
 
         if step == "research":
             # Save topic for later use
@@ -288,6 +338,18 @@ def daily_pipeline(
 
         media_id = publish(image_paths, content, strategy)
         logger.info(f"✓ Published! Media ID: {media_id}")
+
+        try:
+            post_id = save_published_post(
+                media_id=media_id,
+                topic=topic,
+                content=content,
+                strategy=strategy,
+                status="published",
+            )
+            logger.info(f"✓ Saved to post store (id={post_id})")
+        except Exception as e:
+            logger.warning(f"Could not persist post in DB: {e}")
 
         # Save to history
         save_to_history(media_id, topic)

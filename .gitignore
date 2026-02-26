@@ -3,6 +3,7 @@ output/*.png
 output/*.jpg
 logs/*.log
 data/history.json
+data/*.db
 __pycache__/
 *.pyc
 .venv/

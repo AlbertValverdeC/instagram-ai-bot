@@ -56,6 +56,43 @@ gcloud scheduler jobs run techtokio-live-daily --location europe-west1
 - `GRAPH_API_VERSION=v25.0`
 - `PUBLIC_IMAGE_BASE_URL` (si publicas con URLs propias)
 - `DASHBOARD_API_TOKEN` (seguridad endpoints POST)
+- `DATABASE_URL` (obligatorio PostgreSQL en cloud si quieres persistencia real)
+- `DUPLICATE_TOPIC_WINDOW_DAYS` (ventana para bloquear temas repetidos)
+
+## 6) Activar PostgreSQL persistente (recomendado)
+
+Si `DATABASE_URL` empieza por `sqlite://`, en Cloud Run perderás historial/métricas al redeploy o reinicio.
+
+### Opción rápida (Supabase/Neon/Cloud SQL Postgres)
+
+1. Crea una base PostgreSQL.
+2. Copia la URL en formato SQLAlchemy:
+
+```bash
+postgresql+psycopg://USER:PASS@HOST:5432/DBNAME?sslmode=require
+```
+
+3. En tu `.env`, define:
+
+```bash
+DATABASE_URL=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME?sslmode=require
+```
+
+4. Redeploy:
+
+```bash
+PROJECT_ID=tu-project-id REGION=europe-west1 scripts/cloud/deploy_cloud_run.sh
+```
+
+5. (Opcional) Migrar histórico local `history.json` a la DB:
+
+```bash
+.venv/bin/python scripts/db/migrate_history_to_db.py
+```
+
+El dashboard ahora tiene:
+- `GET /api/db-status` para ver si la DB es persistente.
+- `POST /api/posts/sync-metrics` para traer métricas de IG a la DB.
 
 ## Notas
 
@@ -64,3 +101,4 @@ gcloud scheduler jobs run techtokio-live-daily --location europe-west1
 - Seguridad dashboard: si `DASHBOARD_API_TOKEN` está definido, todas las rutas `/api/*` requieren header `X-API-Token`.
 - En la UI web, configura el token en la esquina superior derecha (`API token dashboard`) para operar el panel.
 - En Cloud Run el pipeline se ejecuta en modo síncrono por defecto para evitar que se corte en background.
+- Si en la tarjeta "Publicaciones (DB)" ves warning de SQLite, estás en modo no persistente.

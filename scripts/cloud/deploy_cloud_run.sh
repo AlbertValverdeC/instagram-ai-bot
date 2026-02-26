@@ -88,6 +88,13 @@ PY
   echo "Se generó DASHBOARD_API_TOKEN automáticamente en .env"
 fi
 
+db_url="$(get_env_value DATABASE_URL)"
+if [[ -z "${db_url}" ]]; then
+  echo "WARNING: DATABASE_URL no está definido. Se usará SQLite por defecto (no persistente en Cloud Run)."
+elif [[ "${db_url}" == sqlite* ]]; then
+  echo "WARNING: DATABASE_URL apunta a SQLite. En Cloud Run perderás historial/métricas en reinicios o redeploys."
+fi
+
 tmp_env_yaml="$(mktemp)"
 trap 'rm -f "${tmp_env_yaml}"' EXIT
 

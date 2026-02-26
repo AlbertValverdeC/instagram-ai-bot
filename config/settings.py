@@ -15,6 +15,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 LOGS_DIR = PROJECT_ROOT / "logs"
 HISTORY_FILE = DATA_DIR / "history.json"
 PROMPTS_DIR = DATA_DIR / "prompts"
+DEFAULT_DB_PATH = DATA_DIR / "techtokio.db"
 
 # Ensure directories exist
 for d in [OUTPUT_DIR, DATA_DIR, LOGS_DIR, PROMPTS_DIR]:
@@ -33,6 +34,9 @@ META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "")
 IMGUR_CLIENT_ID = os.getenv("IMGUR_CLIENT_ID", "")
 GRAPH_API_VERSION = (os.getenv("GRAPH_API_VERSION", "v25.0") or "v25.0").strip()
 PUBLIC_IMAGE_BASE_URL = os.getenv("PUBLIC_IMAGE_BASE_URL", "").strip().rstrip("/")
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
+DUPLICATE_TOPIC_WINDOW_DAYS = int(os.getenv("DUPLICATE_TOPIC_WINDOW_DAYS", "90"))
+IS_CLOUD_RUN = bool(os.getenv("K_SERVICE"))
 
 # --- Instagram ---
 INSTAGRAM_HANDLE = os.getenv("INSTAGRAM_HANDLE", "@tu_cuenta_tech")

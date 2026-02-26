@@ -29,6 +29,26 @@ ENV_FILE = PROJECT_ROOT / ".env"
 PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
+_DASHBOARD_API_TOKEN = os.getenv("DASHBOARD_API_TOKEN", "").strip()
+
+
+def _require_api_token():
+    """
+    Protect mutating endpoints in cloud deployments.
+
+    If DASHBOARD_API_TOKEN is empty, auth is disabled (local/dev mode).
+    """
+    if not _DASHBOARD_API_TOKEN:
+        return None
+
+    provided = (
+        request.headers.get("X-API-Token")
+        or request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        or (request.args.get("token") or "").strip()
+    )
+    if provided != _DASHBOARD_API_TOKEN:
+        return jsonify({"error": "Unauthorized"}), 401
+    return None
 
 # ── Prompts metadata ─────────────────────────────────────────────────────────
 
@@ -283,6 +303,14 @@ API_KEYS_CONFIG = [
         "url": "https://api.imgur.com/oauth2/addclient",
     },
     {
+        "key": "DASHBOARD_API_TOKEN",
+        "label": "Dashboard API Token",
+        "hint": "Token para proteger endpoints POST cuando desplegas el dashboard en internet.",
+        "placeholder": "",
+        "required": False,
+        "group": "Security",
+    },
+    {
         "key": "INSTAGRAM_HANDLE",
         "label": "Instagram Handle",
         "hint": "Tu @handle de Instagram. Aparece como watermark en los slides.",
@@ -444,6 +472,10 @@ def api_state():
 
 @app.route("/api/run", methods=["POST"])
 def api_run():
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
     with _lock:
         if _state["status"] == "running":
             return jsonify({"error": "Pipeline already running"}), 409
@@ -473,6 +505,10 @@ def api_run():
 @app.route("/api/search-topic", methods=["POST"])
 def api_search_topic():
     """Run only the research step for a user-provided topic."""
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
     with _lock:
         if _state["status"] == "running":
             return jsonify({"error": "Pipeline already running"}), 409
@@ -540,6 +576,10 @@ def api_keys_get():
 @app.route("/api/keys", methods=["POST"])
 def api_keys_save():
     """Save API keys to .env file."""
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
     data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({"error": "No data"}), 400
@@ -587,6 +627,10 @@ def api_prompts_get():
 @app.route("/api/prompts", methods=["POST"])
 def api_prompts_save():
     """Save a custom prompt. Validates that required {variables} are present."""
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
     data = request.get_json(silent=True) or {}
     pid = data.get("id", "")
     text = data.get("text", "")
@@ -622,6 +666,10 @@ def api_prompts_save():
 @app.route("/api/prompts/reset", methods=["POST"])
 def api_prompts_reset():
     """Reset a prompt to its default (delete the custom .txt file)."""
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
     data = request.get_json(silent=True) or {}
     pid = data.get("id", "")
 
@@ -683,6 +731,10 @@ def api_research_config_get():
 @app.route("/api/research-config", methods=["POST"])
 def api_research_config_save():
     """Save research config to JSON file."""
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
     data = request.get_json(silent=True) or {}
     config = data.get("config")
     if not config:
@@ -705,6 +757,10 @@ def api_research_config_save():
 @app.route("/api/research-config/reset", methods=["POST"])
 def api_research_config_reset():
     """Reset research config to defaults (delete the JSON file)."""
+    auth_error = _require_api_token()
+    if auth_error:
+        return auth_error
+
     if RESEARCH_CONFIG_FILE.exists():
         RESEARCH_CONFIG_FILE.unlink()
     return jsonify({"reset": True})
@@ -1974,9 +2030,11 @@ def docs():
 if __name__ == "__main__":
     import argparse
 
+    default_port = int(os.getenv("PORT", "8000"))
+    default_host = os.getenv("HOST", "127.0.0.1")
     parser = argparse.ArgumentParser(description="IG AI Bot — Dashboard Web")
-    parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
-    parser.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=default_port, help=f"Port (default: {default_port})")
+    parser.add_argument("--host", default=default_host, help=f"Host (default: {default_host})")
     args = parser.parse_args()
 
     print(f"\n  IG AI Bot — Panel de Control")

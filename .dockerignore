@@ -1,0 +1,13 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+.env
+logs/
+output/
+data/last_content.json
+data/last_topic.json
+modules/.researcher.py.swp

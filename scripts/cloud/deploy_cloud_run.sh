@@ -96,6 +96,12 @@ import json
 import sys
 
 env_file, out_file = sys.argv[1], sys.argv[2]
+reserved = {
+    "PORT",
+    "K_SERVICE",
+    "K_REVISION",
+    "K_CONFIGURATION",
+}
 items = {}
 with open(env_file, encoding="utf-8") as f:
     for raw in f:
@@ -105,7 +111,7 @@ with open(env_file, encoding="utf-8") as f:
         k, v = line.split("=", 1)
         k = k.strip()
         v = v.strip()
-        if k:
+        if k and k not in reserved:
             items[k] = v
 
 with open(out_file, "w", encoding="utf-8") as out:

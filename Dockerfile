@@ -15,4 +15,4 @@ RUN mkdir -p /app/output /app/data /app/logs
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "gunicorn -b 0.0.0.0:${PORT:-8080} --workers=2 --threads=4 --timeout=3600 dashboard:app"]
+CMD ["sh", "-c", "gunicorn -b 0.0.0.0:${PORT:-8080} --workers=1 --threads=8 --timeout=3600 dashboard:app"]

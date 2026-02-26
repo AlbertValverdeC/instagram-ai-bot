@@ -95,6 +95,11 @@ elif [[ "${db_url}" == sqlite* ]]; then
   echo "WARNING: DATABASE_URL apunta a SQLite. En Cloud Run perderás historial/métricas en reinicios o redeploys."
 fi
 
+cloudsql_conn="$(get_env_value CLOUD_SQL_INSTANCE_CONNECTION_NAME)"
+if [[ -n "${cloudsql_conn}" ]]; then
+  echo "Cloud SQL connector: habilitado (${cloudsql_conn})"
+fi
+
 tmp_env_yaml="$(mktemp)"
 trap 'rm -f "${tmp_env_yaml}"' EXIT
 
@@ -138,17 +143,23 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com cloudschedul
 
 gcloud builds submit "${PROJECT_ROOT}" --tag "${IMAGE}"
 
-gcloud run deploy "${SERVICE_NAME}" \
-  --image "${IMAGE}" \
-  --region "${REGION}" \
-  --platform managed \
-  --allow-unauthenticated \
-  --port 8080 \
-  --cpu 1 \
-  --memory 2Gi \
-  --timeout 3600 \
-  --max-instances 1 \
+deploy_cmd=(
+  gcloud run deploy "${SERVICE_NAME}"
+  --image "${IMAGE}"
+  --region "${REGION}"
+  --platform managed
+  --allow-unauthenticated
+  --port 8080
+  --cpu 1
+  --memory 2Gi
+  --timeout 3600
+  --max-instances 1
   --env-vars-file "${tmp_env_yaml}"
+)
+if [[ -n "${cloudsql_conn}" ]]; then
+  deploy_cmd+=(--add-cloudsql-instances "${cloudsql_conn}")
+fi
+"${deploy_cmd[@]}"
 
 SERVICE_URL="$(gcloud run services describe "${SERVICE_NAME}" --region "${REGION}" --format='value(status.url)')"
 

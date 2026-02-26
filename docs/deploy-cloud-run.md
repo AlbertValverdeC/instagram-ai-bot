@@ -78,6 +78,13 @@ postgresql+psycopg://USER:PASS@HOST:5432/DBNAME?sslmode=require
 DATABASE_URL=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME?sslmode=require
 ```
 
+Si usas Cloud SQL con socket Unix (recomendado en Cloud Run):
+
+```bash
+CLOUD_SQL_INSTANCE_CONNECTION_NAME=tu-proyecto:europe-west1:techtokio-pg
+DATABASE_URL=postgresql+psycopg://USER:PASS@/DBNAME?host=/cloudsql/tu-proyecto:europe-west1:techtokio-pg
+```
+
 4. Redeploy:
 
 ```bash

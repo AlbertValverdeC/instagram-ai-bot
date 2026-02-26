@@ -213,6 +213,75 @@ def _meta_error_text(resp: requests.Response) -> str:
     return " | ".join(parts)
 
 
+def _meta_error_details(resp: requests.Response) -> dict:
+    """
+    Return normalized Meta error details from a response.
+    """
+    details = {
+        "status_code": resp.status_code,
+        "code": None,
+        "subcode": None,
+        "is_transient": False,
+        "message": "",
+    }
+    try:
+        payload = resp.json()
+    except ValueError:
+        details["message"] = (resp.text or "").strip()[:300]
+        return details
+
+    err = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(err, dict):
+        details["message"] = str(payload)[:300]
+        return details
+
+    details["code"] = err.get("code")
+    details["subcode"] = err.get("error_subcode")
+    details["is_transient"] = bool(err.get("is_transient"))
+    details["message"] = str(err.get("message") or "")[:300]
+    return details
+
+
+def _truncate_json(payload, max_len: int = 500) -> str:
+    try:
+        text = json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        text = str(payload)
+    if len(text) > max_len:
+        return text[:max_len] + "..."
+    return text
+
+
+def _extract_meta_id(payload: dict, *, context: str) -> str:
+    """
+    Extract and validate Graph API object IDs.
+
+    Meta IDs should be non-empty numeric strings. "0" is invalid for publish flow.
+    """
+    if not isinstance(payload, dict):
+        raise RuntimeError(
+            f"Meta {context} returned unexpected payload type: {type(payload).__name__}"
+        )
+
+    if isinstance(payload.get("error"), dict):
+        err = payload["error"]
+        message = err.get("message", "Unknown Meta error")
+        code = err.get("code")
+        raise RuntimeError(f"Meta {context} returned error payload: {message} (code={code})")
+
+    raw_id = payload.get("id")
+    sid = str(raw_id or "").strip()
+    if not sid:
+        raise RuntimeError(
+            f"Meta {context} missing id in payload: {_truncate_json(payload)}"
+        )
+    if sid == "0" or not sid.isdigit():
+        raise RuntimeError(
+            f"Meta {context} returned invalid id={sid}. Payload: {_truncate_json(payload)}"
+        )
+    return sid
+
+
 def _is_meta_transient_error(resp: requests.Response) -> bool:
     """
     Decide if a Meta Graph error is likely transient and should be retried.
@@ -220,28 +289,38 @@ def _is_meta_transient_error(resp: requests.Response) -> bool:
     if resp.status_code >= 500:
         return True
 
-    try:
-        payload = resp.json()
-    except ValueError:
-        return False
-
-    err = payload.get("error") if isinstance(payload, dict) else None
-    if not isinstance(err, dict):
-        return False
-
-    if bool(err.get("is_transient")):
+    details = _meta_error_details(resp)
+    if details["is_transient"]:
         return True
 
-    code = err.get("code")
+    code = details["code"]
+    subcode = details["subcode"]
     # Common transient/rate/infra classes seen in Graph API
     retryable_codes = {1, 2, 4, 17, 32, 613}
-    return code in retryable_codes
+    if code in retryable_codes:
+        return True
+
+    # Seen in live runs right after rate-limit responses.
+    retryable_subcodes = {2207051, 2207085}
+    if subcode in retryable_subcodes:
+        return True
+
+    return False
 
 
-def _retry_sleep(attempt: int, *, base: float = 1.0, cap: float = 12.0):
+def _retry_sleep(
+    attempt: int,
+    *,
+    base: float = 1.0,
+    cap: float = 12.0,
+    retry_after: float | None = None,
+):
     # Exponential backoff with small jitter to avoid burst retries.
     delay = min(cap, base * (2 ** max(0, attempt - 1)))
+    if retry_after and retry_after > 0:
+        delay = max(delay, min(float(retry_after), cap))
     delay += random.uniform(0.0, 0.4)
+    logger.info("Retry backoff: sleeping %.1fs", delay)
     time.sleep(delay)
 
 
@@ -275,10 +354,41 @@ def _graph_post(
             continue
 
         if resp.ok:
-            return resp.json()
+            try:
+                payload = resp.json()
+            except ValueError:
+                body = (resp.text or "").strip()
+                raise RuntimeError(
+                    f"Meta POST {path} returned non-JSON response: {body[:300]}"
+                ) from None
+
+            if isinstance(payload, dict) and isinstance(payload.get("error"), dict):
+                # Sometimes APIs return HTTP 200 with an error envelope.
+                err = payload["error"]
+                message = err.get("message", "Unknown Meta error")
+                code = err.get("code")
+                subcode = err.get("error_subcode")
+                raise RuntimeError(
+                    f"Meta POST {path} returned error payload despite HTTP 200: "
+                    f"{message} (code={code}, subcode={subcode})"
+                )
+            return payload
 
         err_text = _meta_error_text(resp)
         if attempt < attempts and _is_meta_transient_error(resp):
+            details = _meta_error_details(resp)
+            code = details["code"]
+            subcode = details["subcode"]
+            retry_after = None
+            try:
+                retry_after = float(resp.headers.get("Retry-After", ""))
+            except ValueError:
+                retry_after = None
+
+            # Meta rate limiting deserves a much slower retry pace.
+            is_rate_limited = code in {4, 17, 32, 613} or subcode in {2207051, 2207085}
+            base = 15.0 if is_rate_limited else 1.0
+            cap = 180.0 if is_rate_limited else 12.0
             logger.warning(
                 "Meta POST %s error transitorio (attempt %d/%d): %s. Reintentando...",
                 path,
@@ -286,7 +396,7 @@ def _graph_post(
                 attempts,
                 err_text,
             )
-            _retry_sleep(attempt)
+            _retry_sleep(attempt, base=base, cap=cap, retry_after=retry_after)
             continue
 
         raise RuntimeError(f"Meta POST {path} failed: {err_text}")
@@ -353,7 +463,7 @@ def _create_carousel_item(image_url: str) -> str:
             "access_token": META_ACCESS_TOKEN,
         },
     )
-    container_id = payload["id"]
+    container_id = _extract_meta_id(payload, context="carousel_item_create")
     logger.debug(f"Created carousel item: {container_id}")
     return container_id
 
@@ -369,33 +479,65 @@ def _create_carousel_container(item_ids: list[str], caption: str) -> str:
             "access_token": META_ACCESS_TOKEN,
         },
     )
-    container_id = payload["id"]
+    container_id = _extract_meta_id(payload, context="carousel_container_create")
     logger.info(f"Created carousel container: {container_id}")
     return container_id
 
 
-def _publish_container(container_id: str) -> str:
-    """Publish a media container. Returns the published media ID."""
-    # Wait for container to be ready
-    for attempt in range(12):
+def _wait_container_ready(
+    container_id: str,
+    *,
+    kind: str,
+    max_attempts: int = 12,
+    sleep_seconds: float = 5.0,
+):
+    """
+    Poll media container until FINISHED.
+    Raises on ERROR/EXPIRED or timeout.
+    """
+    for attempt in range(1, max_attempts + 1):
         status_payload = _graph_get(
             container_id,
             params={"fields": "status_code,status", "access_token": META_ACCESS_TOKEN},
             timeout=15,
         )
-        status = status_payload.get("status_code")
+        status = (status_payload.get("status_code") or "").strip().upper()
+
         if status == "FINISHED":
-            break
+            return
         if status in {"ERROR", "EXPIRED"}:
-            raise RuntimeError(f"Container {container_id} failed with status={status}")
-        logger.info(f"Container status: {status}, waiting... (attempt {attempt + 1})")
-        time.sleep(5)
+            raise RuntimeError(
+                f"{kind} container {container_id} failed with status={status}. "
+                f"Payload={_truncate_json(status_payload)}"
+            )
+        if attempt >= max_attempts:
+            raise RuntimeError(
+                f"{kind} container {container_id} did not reach FINISHED. "
+                f"Last status={status or 'unknown'} after {max_attempts} checks. "
+                f"Payload={_truncate_json(status_payload)}"
+            )
+
+        logger.info(
+            "%s container status: %s, waiting... (attempt %d/%d)",
+            kind,
+            status or "unknown",
+            attempt,
+            max_attempts,
+        )
+        time.sleep(sleep_seconds)
+
+
+def _publish_container(container_id: str) -> str:
+    """Publish a media container. Returns the published media ID."""
+    # Wait for container to be ready.
+    _wait_container_ready(container_id, kind="carousel", max_attempts=12, sleep_seconds=5.0)
 
     payload = _graph_post(
         f"{INSTAGRAM_ACCOUNT_ID}/media_publish",
         data={"creation_id": container_id, "access_token": META_ACCESS_TOKEN},
+        retries=8,
     )
-    media_id = payload["id"]
+    media_id = _extract_meta_id(payload, context="media_publish")
     logger.info(f"Published! Media ID: {media_id}")
     return media_id
 
@@ -435,8 +577,15 @@ def publish(image_paths: list[Path], content: dict, strategy: dict) -> str:
     # Step 2: Create carousel items
     logger.info("Step 2/3: Creating carousel items...")
     item_ids = []
-    for url in image_urls:
+    for idx, url in enumerate(image_urls, start=1):
         item_id = _create_carousel_item(url)
+        # Ensure child containers are fully processed before creating parent carousel.
+        _wait_container_ready(
+            item_id,
+            kind=f"carousel_item_{idx}",
+            max_attempts=8,
+            sleep_seconds=2.0,
+        )
         item_ids.append(item_id)
         time.sleep(1)
 

@@ -359,6 +359,15 @@ API_KEYS_CONFIG = [
         "group": "Storage",
     },
     {
+        "key": "CLOUD_SQL_INSTANCE_CONNECTION_NAME",
+        "label": "Cloud SQL Connection Name",
+        "hint": "Solo Cloud Run + Cloud SQL socket. Formato: proyecto:region:instancia",
+        "placeholder": "kanguro-meet-integration:europe-west1:techtokio-pg",
+        "required": False,
+        "group": "Storage",
+        "secret": False,
+    },
+    {
         "key": "DUPLICATE_TOPIC_WINDOW_DAYS",
         "label": "Duplicate Topic Window Days",
         "hint": "Bloqueo de temas repetidos por hash en ventana reciente (días).",

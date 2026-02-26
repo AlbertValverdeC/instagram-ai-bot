@@ -30,6 +30,8 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     func,
+    inspect,
+    text,
     select,
 )
 from sqlalchemy.engine import make_url
@@ -43,6 +45,21 @@ logger = logging.getLogger(__name__)
 _metadata = MetaData()
 _engine = None
 
+POST_STATUS_GENERATED = "generated"
+POST_STATUS_PUBLISH_ERROR = "publish_error"
+POST_STATUS_PUBLISHED = "published"  # Legacy compatibility
+POST_STATUS_PUBLISHED_ACTIVE = "published_active"
+POST_STATUS_PUBLISHED_DELETED = "published_deleted"
+
+PUBLISHED_STATUSES = {
+    POST_STATUS_PUBLISHED,
+    POST_STATUS_PUBLISHED_ACTIVE,
+}
+RETRYABLE_STATUSES = {
+    POST_STATUS_GENERATED,
+    POST_STATUS_PUBLISH_ERROR,
+}
+
 posts_table = Table(
     "posts",
     _metadata,
@@ -54,7 +71,14 @@ posts_table = Table(
     Column("caption", Text, nullable=True),
     Column("virality_score", Float, nullable=True),
     Column("status", String(32), nullable=False, server_default="published", index=True),
+    Column("ig_status", String(32), nullable=False, server_default="unknown", index=True),
     Column("source_count", Integer, nullable=False, server_default="0"),
+    Column("publish_attempts", Integer, nullable=False, server_default="0"),
+    Column("last_publish_attempt_at", DateTime(timezone=True), nullable=True),
+    Column("last_error_tag", String(64), nullable=True, index=True),
+    Column("last_error_code", String(64), nullable=True),
+    Column("last_error_message", Text, nullable=True),
+    Column("ig_last_checked_at", DateTime(timezone=True), nullable=True),
     Column("published_at", DateTime(timezone=True), nullable=True, index=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("topic_payload", JSON, nullable=True),
@@ -261,13 +285,71 @@ def get_db_runtime_info() -> dict:
     }
 
 
+_POSTS_MIGRATIONS = [
+    ("ig_status", "ALTER TABLE posts ADD COLUMN ig_status VARCHAR(32)"),
+    ("publish_attempts", "ALTER TABLE posts ADD COLUMN publish_attempts INTEGER DEFAULT 0"),
+    ("last_publish_attempt_at", "ALTER TABLE posts ADD COLUMN last_publish_attempt_at TIMESTAMP"),
+    ("last_error_tag", "ALTER TABLE posts ADD COLUMN last_error_tag VARCHAR(64)"),
+    ("last_error_code", "ALTER TABLE posts ADD COLUMN last_error_code VARCHAR(64)"),
+    ("last_error_message", "ALTER TABLE posts ADD COLUMN last_error_message TEXT"),
+    ("ig_last_checked_at", "ALTER TABLE posts ADD COLUMN ig_last_checked_at TIMESTAMP"),
+]
+
+
+def _run_schema_migrations():
+    """
+    Lightweight in-place migrations for environments without Alembic.
+    """
+    engine = get_engine()
+    with engine.begin() as conn:
+        insp = inspect(conn)
+        if "posts" not in insp.get_table_names():
+            return
+
+        existing = {c["name"] for c in insp.get_columns("posts")}
+        for column_name, sql in _POSTS_MIGRATIONS:
+            if column_name in existing:
+                continue
+            logger.info("Applying post_store migration: add posts.%s", column_name)
+            conn.execute(text(sql))
+
+        # Backfill sensible defaults for nullable historical rows.
+        conn.execute(
+            text(
+                "UPDATE posts SET publish_attempts = 0 "
+                "WHERE publish_attempts IS NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE posts SET ig_status = 'unknown' "
+                "WHERE ig_status IS NULL OR ig_status = ''"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE posts SET status = :active "
+                "WHERE status = :legacy"
+            ),
+            {"active": POST_STATUS_PUBLISHED_ACTIVE, "legacy": POST_STATUS_PUBLISHED},
+        )
+
+        # Keep backward compatibility for any pre-existing "published" filters.
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_posts_ig_status ON posts (ig_status)"))
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_posts_last_error_tag ON posts (last_error_tag)")
+        )
+
+
 def ensure_schema():
     try:
         _metadata.create_all(get_engine())
+        _run_schema_migrations()
     except OperationalError as e:
         # In concurrent startup races on SQLite, CREATE TABLE can collide.
         if "already exists" in str(e).lower():
             logger.debug("Post store schema already exists; continuing")
+            _run_schema_migrations()
             return
         raise
 
@@ -306,7 +388,7 @@ def find_duplicate_candidate(
                 )
                 .join(post_sources_table, post_sources_table.c.post_id == posts_table.c.id)
                 .where(post_sources_table.c.source_hash == shash)
-                .where(posts_table.c.status == "published")
+                .where(posts_table.c.status.in_(list(PUBLISHED_STATUSES)))
                 .order_by(posts_table.c.published_at.desc(), posts_table.c.id.desc())
                 .limit(1)
             ).mappings().first()
@@ -334,7 +416,7 @@ def find_duplicate_candidate(
                     posts_table.c.published_at,
                 )
                 .where(posts_table.c.topic_hash == thash)
-                .where(posts_table.c.status == "published")
+                .where(posts_table.c.status.in_(list(PUBLISHED_STATUSES)))
                 .where(posts_table.c.published_at >= cutoff)
                 .order_by(posts_table.c.published_at.desc(), posts_table.c.id.desc())
                 .limit(1)

@@ -1,0 +1,225 @@
+[
+  {
+    "key": "OPENAI_API_KEY",
+    "label": "OpenAI API Key",
+    "hint": "Clave para GPT-4o (Director) y GPT-4o-mini (Research + Content)",
+    "placeholder": "sk-...",
+    "required": true,
+    "group": "AI Models",
+    "url": "https://platform.openai.com/api-keys"
+  },
+  {
+    "key": "GOOGLE_AI_API_KEY",
+    "label": "Google AI API Key",
+    "hint": "Clave para generar imágenes AI (Gemini image / Imagen). Sin ella se usan degradados.",
+    "placeholder": "AIza...",
+    "required": false,
+    "group": "AI Models",
+    "url": "https://aistudio.google.com/apikey"
+  },
+  {
+    "key": "GOOGLE_IMAGE_MODEL",
+    "label": "Google Image Model",
+    "hint": "Modelo de imagen. Recomendado: gemini-2.5-flash-image (Nano Banana).",
+    "placeholder": "gemini-2.5-flash-image",
+    "required": false,
+    "group": "AI Models",
+    "secret": false
+  },
+  {
+    "key": "DIRECTOR_MODEL",
+    "label": "Director Model",
+    "hint": "Modelo del Prompt Director. Por defecto gpt-4o.",
+    "placeholder": "gpt-4o",
+    "required": false,
+    "group": "AI Models",
+    "secret": false
+  },
+  {
+    "key": "CONTENT_USE_DIRECTOR",
+    "label": "Use Director in Content",
+    "hint": "true/false. Recomendado false para máxima estabilidad de JSON en contenido.",
+    "placeholder": "false",
+    "required": false,
+    "group": "AI Models",
+    "secret": false
+  },
+  {
+    "key": "NEWSAPI_KEY",
+    "label": "NewsAPI Key",
+    "hint": "Opcional. Se usa en backend legacy como fuente adicional.",
+    "placeholder": "",
+    "required": false,
+    "group": "Data Sources",
+    "url": "https://newsapi.org/register"
+  },
+  {
+    "key": "TAVILY_API_KEY",
+    "label": "Tavily API Key",
+    "hint": "Buscador web para investigación de tendencias. Recomendado para modo simplificado.",
+    "placeholder": "tvly-...",
+    "required": false,
+    "group": "Data Sources",
+    "url": "https://tavily.com"
+  },
+  {
+    "key": "RESEARCH_BACKEND",
+    "label": "Research Backend",
+    "hint": "Motor de investigación: auto | tavily | legacy. Recomendado: auto.",
+    "placeholder": "auto",
+    "required": false,
+    "group": "Data Sources",
+    "secret": false
+  },
+  {
+    "key": "REDDIT_CLIENT_ID",
+    "label": "Reddit Client ID",
+    "hint": "Client ID de tu app Reddit (tipo script).",
+    "placeholder": "",
+    "required": false,
+    "group": "Data Sources",
+    "url": "https://www.reddit.com/prefs/apps"
+  },
+  {
+    "key": "REDDIT_CLIENT_SECRET",
+    "label": "Reddit Client Secret",
+    "hint": "Client Secret de tu app Reddit.",
+    "placeholder": "",
+    "required": false,
+    "group": "Data Sources"
+  },
+  {
+    "key": "REDDIT_USER_AGENT",
+    "label": "Reddit User Agent",
+    "hint": "Identificador para la API de Reddit.",
+    "placeholder": "instagram-ai-bot/1.0",
+    "required": false,
+    "group": "Data Sources",
+    "secret": false
+  },
+  {
+    "key": "INSTAGRAM_ACCOUNT_ID",
+    "label": "Instagram Account ID",
+    "hint": "ID numérico de tu cuenta de Instagram Business.",
+    "placeholder": "17841400000000000",
+    "required": true,
+    "group": "Publishing",
+    "url": "https://developers.facebook.com/tools/explorer/",
+    "secret": false
+  },
+  {
+    "key": "FACEBOOK_PAGE_ID",
+    "label": "Facebook Page ID",
+    "hint": "ID de la página de Facebook vinculada a tu cuenta de Instagram.",
+    "placeholder": "000000000000000",
+    "required": true,
+    "group": "Publishing",
+    "secret": false
+  },
+  {
+    "key": "META_ACCESS_TOKEN",
+    "label": "Meta Access Token",
+    "hint": "Token de System User con permisos instagram_basic + instagram_content_publish + pages_*.",
+    "placeholder": "EAA...",
+    "required": true,
+    "group": "Publishing",
+    "url": "https://developers.facebook.com/tools/explorer/"
+  },
+  {
+    "key": "GRAPH_API_VERSION",
+    "label": "Graph API Version",
+    "hint": "Versión de Graph API para publicar. Recomendado: v25.0.",
+    "placeholder": "v25.0",
+    "required": false,
+    "group": "Publishing",
+    "secret": false
+  },
+  {
+    "key": "PUBLIC_IMAGE_BASE_URL",
+    "label": "Public Image Base URL",
+    "hint": "Base URL pública directa de tus slides (ngrok/CDN). Ej: https://tu-dominio.com/output",
+    "placeholder": "https://tu-dominio.com/output",
+    "required": false,
+    "group": "Publishing",
+    "secret": false
+  },
+  {
+    "key": "IMGUR_CLIENT_ID",
+    "label": "Imgur Client ID",
+    "hint": "Fallback de hosting temporal si no usas PUBLIC_IMAGE_BASE_URL.",
+    "placeholder": "",
+    "required": false,
+    "group": "Publishing",
+    "url": "https://api.imgur.com/oauth2/addclient"
+  },
+  {
+    "key": "DASHBOARD_API_TOKEN",
+    "label": "Dashboard API Token",
+    "hint": "Token para proteger endpoints POST cuando desplegas el dashboard en internet.",
+    "placeholder": "",
+    "required": false,
+    "group": "Security"
+  },
+  {
+    "key": "DATABASE_URL",
+    "label": "Database URL",
+    "hint": "Base de datos de posts y métricas. En Cloud Run usa PostgreSQL (no SQLite). Ej: postgresql+psycopg://user:pass@host/db?sslmode=require",
+    "placeholder": "sqlite:///data/techtokio.db",
+    "required": false,
+    "group": "Storage"
+  },
+  {
+    "key": "AUTO_IG_SYNC_INTERVAL_MINUTES",
+    "label": "Auto IG Sync (min)",
+    "hint": "Cada cuántos minutos sincronizar automáticamente estado+métricas de IG desde el dashboard.",
+    "placeholder": "30",
+    "required": false,
+    "group": "Storage",
+    "secret": false
+  },
+  {
+    "key": "AUTO_IG_SYNC_LIMIT",
+    "label": "Auto IG Sync Limit",
+    "hint": "Número máximo de posts revisados por sincronización automática.",
+    "placeholder": "40",
+    "required": false,
+    "group": "Storage",
+    "secret": false
+  },
+  {
+    "key": "CLOUD_SQL_INSTANCE_CONNECTION_NAME",
+    "label": "Cloud SQL Connection Name",
+    "hint": "Solo Cloud Run + Cloud SQL socket. Formato: proyecto:region:instancia",
+    "placeholder": "kanguro-meet-integration:europe-west1:techtokio-pg",
+    "required": false,
+    "group": "Storage",
+    "secret": false
+  },
+  {
+    "key": "DUPLICATE_TOPIC_WINDOW_DAYS",
+    "label": "Duplicate Topic Window Days",
+    "hint": "Bloqueo de temas repetidos por hash en ventana reciente (días).",
+    "placeholder": "90",
+    "required": false,
+    "group": "Storage",
+    "secret": false
+  },
+  {
+    "key": "INSTAGRAM_HANDLE",
+    "label": "Instagram Handle",
+    "hint": "Tu @handle de Instagram. Aparece como watermark en los slides.",
+    "placeholder": "@tu_cuenta_tech",
+    "required": false,
+    "group": "Branding",
+    "secret": false
+  },
+  {
+    "key": "TIMEZONE",
+    "label": "Timezone",
+    "hint": "Zona horaria para calcular el horario óptimo de publicación.",
+    "placeholder": "Europe/Madrid",
+    "required": false,
+    "group": "Branding",
+    "secret": false
+  }
+]

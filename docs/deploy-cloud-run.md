@@ -26,7 +26,7 @@ Qué hace:
 - Genera `DASHBOARD_API_TOKEN` si no existe.
 - Fuerza `PUBLIC_IMAGE_BASE_URL` a la URL real del servicio Cloud Run.
 
-## 3) Programar ejecución diaria (`mode=live`)
+## 3) Programar ejecución diaria + sync IG automático
 
 ```bash
 PROJECT_ID=tu-project-id REGION=europe-west1 \
@@ -40,10 +40,17 @@ Eso crea/actualiza un Cloud Scheduler job que llama:
 - body: `{"mode":"live"}`
 - header: `X-API-Token: DASHBOARD_API_TOKEN`
 
+Además crea/actualiza un segundo job de sincronización IG:
+
+- `POST /api/posts/sync-instagram`
+- body: `{"limit":40}`
+- cron por defecto: `*/30 * * * *` (configurable con `SYNC_SCHEDULE`)
+
 ## 4) Lanzar una ejecución manual de prueba
 
 ```bash
 gcloud scheduler jobs run techtokio-live-daily --location europe-west1
+gcloud scheduler jobs run techtokio-ig-sync --location europe-west1
 ```
 
 ## 5) Variables importantes en `.env`
@@ -58,6 +65,8 @@ gcloud scheduler jobs run techtokio-live-daily --location europe-west1
 - `DASHBOARD_API_TOKEN` (seguridad endpoints POST)
 - `DATABASE_URL` (obligatorio PostgreSQL en cloud si quieres persistencia real)
 - `DUPLICATE_TOPIC_WINDOW_DAYS` (ventana para bloquear temas repetidos)
+- `AUTO_IG_SYNC_INTERVAL_MINUTES` (auto-sync en dashboard por intervalo, además del scheduler)
+- `AUTO_IG_SYNC_LIMIT` (máximo de posts por ciclo de sync)
 
 ## 6) Activar PostgreSQL persistente (recomendado)
 
@@ -99,7 +108,9 @@ PROJECT_ID=tu-project-id REGION=europe-west1 scripts/cloud/deploy_cloud_run.sh
 
 El dashboard ahora tiene:
 - `GET /api/db-status` para ver si la DB es persistente.
-- `POST /api/posts/sync-metrics` para traer métricas de IG a la DB.
+- `POST /api/posts/sync-metrics` / `POST /api/posts/sync-instagram` para sync de estado+métricas IG.
+- `POST /api/posts/<id>/retry-publish` para reintentar publicaciones fallidas.
+- Estados persistidos: `generated`, `publish_error`, `published_active`, `published_deleted`.
 
 ## Notas
 

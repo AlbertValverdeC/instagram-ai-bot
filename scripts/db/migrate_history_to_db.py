@@ -99,7 +99,7 @@ def main():
                 topic_hash=topic_hash(topic) or _fallback_topic_hash(topic, media_id),
                 caption=None,
                 virality_score=row.get("virality_score"),
-                status="published",
+                status="published_active",
                 source_count=0,
                 published_at=published_at,
                 topic_payload=row,

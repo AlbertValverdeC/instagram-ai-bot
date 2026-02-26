@@ -1,0 +1,80 @@
+[
+  {
+    "id": "research_meta",
+    "name": "Meta-prompt de investigación",
+    "description": "Define cómo el Director redacta el prompt final que se usará para elegir el tema.",
+    "category": "Investigacion",
+    "type": "meta",
+    "module": "prompt_director.py",
+    "variables": ["day_name", "num_articles", "has_trends", "past_count"],
+    "what_it_does": "No selecciona el tema directamente. Diseña las instrucciones para que el modelo de ranking haga una mejor selección.",
+    "when_it_runs": "Se ejecuta al inicio de la fase de Investigación. Si falla, el sistema usa el prompt fallback de investigación.",
+    "if_you_change_it": "Cambias el criterio de selección (viralidad, frescura, variedad). Si quitas la exigencia de JSON o estructuras clave, aumentan los reintentos/fallos.",
+    "risk_level": "medio-alto"
+  },
+  {
+    "id": "research_fallback",
+    "name": "Ranking de temas (fallback)",
+    "description": "Prompt directo que elige tema, key points y fuentes cuando el Director no sirve.",
+    "category": "Investigacion",
+    "type": "fallback",
+    "module": "researcher.py",
+    "variables": ["articles_text", "trends_text", "past_text"],
+    "what_it_does": "Este prompt sí decide el tema final cuando el meta-prompt falla o devuelve una estructura inválida.",
+    "when_it_runs": "Se usa como respaldo en Investigación y en reintentos de robustez.",
+    "if_you_change_it": "Impacto directo en la calidad del tema y los puntos. Si lo vuelves ambiguo, saldrán temas vagos; si rompes formato JSON, fallará el paso.",
+    "risk_level": "alto"
+  },
+  {
+    "id": "content_meta",
+    "name": "Meta-prompt contenido",
+    "description": "Define cómo el Director construye el prompt que generará los 8 slides y el caption.",
+    "category": "Contenido",
+    "type": "meta",
+    "module": "prompt_director.py",
+    "variables": ["topic_title", "topic_en", "key_points", "virality", "day_name", "tone_hint", "style_hint"],
+    "what_it_does": "Ajusta tono, hook, narrativa y estructura para que el generador de contenido produzca un carrusel coherente y viral.",
+    "when_it_runs": "Se ejecuta al inicio de la fase de Contenido. Si el resultado sale inválido, se usa el fallback de contenido.",
+    "if_you_change_it": "Afecta estilo, agresividad del copy y claridad del relato. Si quitas reglas de estructura, aumenta el riesgo de slides incompletos.",
+    "risk_level": "medio-alto"
+  },
+  {
+    "id": "content_fallback",
+    "name": "Generador de carrusel (fallback)",
+    "description": "Prompt directo de generación de texto para cover, contenido, CTA y caption.",
+    "category": "Contenido",
+    "type": "fallback",
+    "module": "content_generator.py",
+    "variables": ["topic", "key_points", "context", "total_slides", "num_content_slides"],
+    "what_it_does": "Genera la salida final en JSON cuando el meta-prompt de contenido no funciona.",
+    "when_it_runs": "Se usa en fallback o retry cuando la respuesta del modelo viene incompleta o con claves incorrectas.",
+    "if_you_change_it": "Impacto directo en títulos, cuerpo y CTA. Si eliminas requisitos de conteo/JSON, volverán los problemas de slides vacíos o inválidos.",
+    "risk_level": "alto"
+  },
+  {
+    "id": "image_meta",
+    "name": "Meta-prompt de imagen",
+    "description": "Define cómo se redacta el prompt visual principal del cover.",
+    "category": "Imagen",
+    "type": "meta",
+    "module": "prompt_director.py",
+    "variables": ["topic_en"],
+    "what_it_does": "Construye el prompt de imagen principal con la temática del tema, estilo ilustrado y composición (sujeto arriba, texto abajo).",
+    "when_it_runs": "Se ejecuta al entrar en la fase de Diseño, antes de generar la imagen de portada.",
+    "if_you_change_it": "Cambia estética y composición. Si añades personas reales, logos o texto en imagen, pueden activarse filtros y bajar la tasa de éxito.",
+    "risk_level": "medio"
+  },
+  {
+    "id": "image_fallback",
+    "name": "Prompt imagen (fallback)",
+    "description": "Prompt de emergencia para generar imagen cuando el prompt principal es bloqueado o devuelve vacío.",
+    "category": "Imagen",
+    "type": "fallback",
+    "module": "image_generator.py",
+    "variables": [],
+    "what_it_does": "Mantiene una salida visual estable cuando falla el prompt principal de imagen.",
+    "when_it_runs": "Se usa en segunda vuelta, después de un fallo de generación inicial.",
+    "if_you_change_it": "Define el look de contingencia. Si lo haces demasiado arriesgado, puede fallar también y terminar en degradado local.",
+    "risk_level": "medio"
+  }
+]

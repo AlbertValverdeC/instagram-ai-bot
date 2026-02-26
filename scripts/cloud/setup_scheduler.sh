@@ -9,7 +9,9 @@ SERVICE_NAME="${SERVICE_NAME:-techtokio-dashboard}"
 REGION="${REGION:-europe-west1}"
 SCHEDULER_LOCATION="${SCHEDULER_LOCATION:-${REGION}}"
 JOB_NAME="${JOB_NAME:-techtokio-live-daily}"
+SYNC_JOB_NAME="${SYNC_JOB_NAME:-techtokio-ig-sync}"
 SCHEDULE="${SCHEDULE:-30 8 * * *}"
+SYNC_SCHEDULE="${SYNC_SCHEDULE:-*/30 * * * *}"
 TIMEZONE="${TIMEZONE:-Europe/Madrid}"
 MODE="${MODE:-live}"
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
@@ -95,4 +97,37 @@ echo "Scheduler ${action}: ${JOB_NAME}"
 echo "Cron: ${SCHEDULE} (${TIMEZONE})"
 echo "Target: ${uri}"
 echo
-echo "Para probar ahora: gcloud scheduler jobs run ${JOB_NAME} --location ${SCHEDULER_LOCATION}"
+sync_uri="${service_url}/api/posts/sync-instagram"
+sync_body='{"limit":40}'
+
+if gcloud scheduler jobs describe "${SYNC_JOB_NAME}" --location "${SCHEDULER_LOCATION}" >/dev/null 2>&1; then
+  gcloud scheduler jobs update http "${SYNC_JOB_NAME}" \
+    --location "${SCHEDULER_LOCATION}" \
+    --schedule "${SYNC_SCHEDULE}" \
+    --time-zone "${TIMEZONE}" \
+    --uri "${sync_uri}" \
+    --http-method POST \
+    --update-headers "${headers}" \
+    --message-body "${sync_body}" \
+    --quiet >/dev/null
+  sync_action="updated"
+else
+  gcloud scheduler jobs create http "${SYNC_JOB_NAME}" \
+    --location "${SCHEDULER_LOCATION}" \
+    --schedule "${SYNC_SCHEDULE}" \
+    --time-zone "${TIMEZONE}" \
+    --uri "${sync_uri}" \
+    --http-method POST \
+    --headers "${headers}" \
+    --message-body "${sync_body}" \
+    --quiet >/dev/null
+  sync_action="created"
+fi
+
+echo "Scheduler ${sync_action}: ${SYNC_JOB_NAME}"
+echo "Cron sync IG: ${SYNC_SCHEDULE} (${TIMEZONE})"
+echo "Target sync: ${sync_uri}"
+echo
+echo "Para probar ahora:"
+echo "  gcloud scheduler jobs run ${JOB_NAME} --location ${SCHEDULER_LOCATION}"
+echo "  gcloud scheduler jobs run ${SYNC_JOB_NAME} --location ${SCHEDULER_LOCATION}"

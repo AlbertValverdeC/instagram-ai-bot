@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import re
+import threading
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit, urlunsplit
 
@@ -44,6 +45,8 @@ logger = logging.getLogger(__name__)
 
 _metadata = MetaData()
 _engine = None
+_schema_initialized = False
+_schema_lock = threading.Lock()
 
 POST_STATUS_GENERATED = "generated"
 POST_STATUS_PUBLISH_ERROR = "publish_error"
@@ -334,24 +337,33 @@ def _run_schema_migrations():
             {"active": POST_STATUS_PUBLISHED_ACTIVE, "legacy": POST_STATUS_PUBLISHED},
         )
 
-        # Keep backward compatibility for any pre-existing "published" filters.
-        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_posts_ig_status ON posts (ig_status)"))
-        conn.execute(
-            text("CREATE INDEX IF NOT EXISTS ix_posts_last_error_tag ON posts (last_error_tag)")
-        )
+        index_names = {idx.get("name") for idx in insp.get_indexes("posts")}
+        if "ix_posts_ig_status" not in index_names:
+            conn.execute(text("CREATE INDEX ix_posts_ig_status ON posts (ig_status)"))
+        if "ix_posts_last_error_tag" not in index_names:
+            conn.execute(text("CREATE INDEX ix_posts_last_error_tag ON posts (last_error_tag)"))
 
 
 def ensure_schema():
-    try:
-        _metadata.create_all(get_engine())
-        _run_schema_migrations()
-    except OperationalError as e:
-        # In concurrent startup races on SQLite, CREATE TABLE can collide.
-        if "already exists" in str(e).lower():
-            logger.debug("Post store schema already exists; continuing")
-            _run_schema_migrations()
+    global _schema_initialized
+    if _schema_initialized:
+        return
+
+    with _schema_lock:
+        if _schema_initialized:
             return
-        raise
+        try:
+            _metadata.create_all(get_engine())
+            _run_schema_migrations()
+            _schema_initialized = True
+        except OperationalError as e:
+            # In concurrent startup races on SQLite, CREATE TABLE can collide.
+            if "already exists" in str(e).lower():
+                logger.debug("Post store schema already exists; continuing")
+                _run_schema_migrations()
+                _schema_initialized = True
+                return
+            raise
 
 
 def find_duplicate_candidate(
@@ -436,19 +448,42 @@ def find_duplicate_candidate(
     return None
 
 
-def save_published_post(
-    media_id: str,
+def _insert_post_sources(conn, *, post_id: int, source_urls: list[str]) -> int:
+    source_count = 0
+    for raw_url in source_urls:
+        canon = canonical_source_url(raw_url)
+        shash = source_hash(raw_url)
+        if not canon or not shash:
+            continue
+        try:
+            conn.execute(
+                post_sources_table.insert().values(
+                    post_id=post_id,
+                    source_url=canon,
+                    source_hash=shash,
+                    domain=_extract_domain(canon),
+                    article_published_at=None,
+                )
+            )
+            source_count += 1
+        except IntegrityError:
+            # Source already exists from another post -> useful for duplicate diagnostics.
+            logger.warning("Source URL already exists in DB (duplicate hash): %s", canon)
+    return source_count
+
+
+def create_generated_post(
+    *,
     topic: dict,
     content: dict,
     strategy: dict,
-    *,
-    status: str = "published",
+    status: str = POST_STATUS_GENERATED,
 ) -> int:
     """
-    Persist a published post and related source URLs.
+    Persist a generated carousel before publish attempt.
     """
     ensure_schema()
-    published_at = _utc_now()
+    created_at = _utc_now()
     topic_text = str(topic.get("topic", "")).strip()
     source_urls = topic.get("source_urls") or []
     if not isinstance(source_urls, list):
@@ -457,49 +492,193 @@ def save_published_post(
     with get_engine().begin() as conn:
         insert_result = conn.execute(
             posts_table.insert().values(
-                ig_media_id=media_id,
+                ig_media_id=None,
                 topic=topic_text or "(sin topic)",
                 topic_en=str(topic.get("topic_en", "")).strip() or None,
-                topic_hash=topic_hash(topic_text) or _hash_text(f"post-{media_id}-{published_at.isoformat()}"),
+                topic_hash=topic_hash(topic_text) or _hash_text(f"post-generated-{created_at.isoformat()}"),
                 caption=str(strategy.get("full_caption") or content.get("caption") or "").strip() or None,
                 virality_score=topic.get("virality_score"),
                 status=status,
+                ig_status="unknown",
                 source_count=0,
-                published_at=published_at,
+                publish_attempts=0,
+                published_at=None,
                 topic_payload=topic,
                 content_payload=content,
                 strategy_payload=strategy,
             )
         )
-        post_id = insert_result.inserted_primary_key[0]
-
-        source_count = 0
-        for raw_url in source_urls:
-            canon = canonical_source_url(raw_url)
-            shash = source_hash(raw_url)
-            if not canon or not shash:
-                continue
-            try:
-                conn.execute(
-                    post_sources_table.insert().values(
-                        post_id=post_id,
-                        source_url=canon,
-                        source_hash=shash,
-                        domain=_extract_domain(canon),
-                        article_published_at=None,
-                    )
-                )
-                source_count += 1
-            except IntegrityError:
-                # Source already exists from a previous post -> useful for duplicate diagnostics.
-                logger.warning("Source URL already exists in DB (duplicate hash): %s", canon)
-
+        post_id = int(insert_result.inserted_primary_key[0])
+        source_count = _insert_post_sources(conn, post_id=post_id, source_urls=source_urls)
         conn.execute(
             posts_table.update()
             .where(posts_table.c.id == post_id)
             .values(source_count=source_count)
         )
+    return post_id
 
+
+def mark_post_publish_attempt(post_id: int) -> None:
+    """
+    Increment publish attempts for a generated/failed post.
+    """
+    ensure_schema()
+    with get_engine().begin() as conn:
+        conn.execute(
+            posts_table.update()
+            .where(posts_table.c.id == int(post_id))
+            .values(
+                publish_attempts=(posts_table.c.publish_attempts + 1),
+                last_publish_attempt_at=_utc_now(),
+            )
+        )
+
+
+def mark_post_published(
+    *,
+    post_id: int,
+    media_id: str,
+    status: str = POST_STATUS_PUBLISHED_ACTIVE,
+) -> None:
+    ensure_schema()
+    published_at = _utc_now()
+    with get_engine().begin() as conn:
+        conn.execute(
+            posts_table.update()
+            .where(posts_table.c.id == int(post_id))
+            .values(
+                ig_media_id=str(media_id).strip(),
+                status=status,
+                ig_status="active",
+                ig_last_checked_at=published_at,
+                published_at=published_at,
+                last_error_tag=None,
+                last_error_code=None,
+                last_error_message=None,
+            )
+        )
+
+
+def mark_post_publish_error(
+    *,
+    post_id: int,
+    error_tag: str,
+    error_code: str | None,
+    error_message: str,
+) -> None:
+    ensure_schema()
+    with get_engine().begin() as conn:
+        conn.execute(
+            posts_table.update()
+            .where(posts_table.c.id == int(post_id))
+            .values(
+                status=POST_STATUS_PUBLISH_ERROR,
+                last_error_tag=(error_tag or "publish_error"),
+                last_error_code=(str(error_code).strip() if error_code else None),
+                last_error_message=str(error_message or "").strip()[:2000] or None,
+            )
+        )
+
+
+def mark_post_ig_active(*, post_id: int) -> None:
+    ensure_schema()
+    now = _utc_now()
+    with get_engine().begin() as conn:
+        conn.execute(
+            posts_table.update()
+            .where(posts_table.c.id == int(post_id))
+            .values(
+                status=POST_STATUS_PUBLISHED_ACTIVE,
+                ig_status="active",
+                ig_last_checked_at=now,
+            )
+        )
+
+
+def mark_post_ig_deleted(*, post_id: int, reason: str | None = None) -> None:
+    ensure_schema()
+    now = _utc_now()
+    with get_engine().begin() as conn:
+        conn.execute(
+            posts_table.update()
+            .where(posts_table.c.id == int(post_id))
+            .values(
+                status=POST_STATUS_PUBLISHED_DELETED,
+                ig_status="deleted",
+                ig_last_checked_at=now,
+                last_error_tag="ig_deleted",
+                last_error_code="100:33",
+                last_error_message=(str(reason or "").strip()[:2000] or None),
+            )
+        )
+
+
+def get_post(post_id: int) -> dict | None:
+    ensure_schema()
+    with get_engine().begin() as conn:
+        row = conn.execute(
+            select(
+                posts_table.c.id,
+                posts_table.c.ig_media_id,
+                posts_table.c.topic,
+                posts_table.c.topic_payload,
+                posts_table.c.content_payload,
+                posts_table.c.strategy_payload,
+                posts_table.c.status,
+                posts_table.c.ig_status,
+                posts_table.c.publish_attempts,
+                posts_table.c.last_error_tag,
+                posts_table.c.last_error_code,
+                posts_table.c.last_error_message,
+                posts_table.c.published_at,
+                posts_table.c.created_at,
+            )
+            .where(posts_table.c.id == int(post_id))
+            .limit(1)
+        ).mappings().first()
+    return dict(row) if row else None
+
+
+def list_retryable_posts(limit: int = 20) -> list[dict]:
+    ensure_schema()
+    safe_limit = max(1, min(int(limit or 20), 200))
+    with get_engine().begin() as conn:
+        rows = conn.execute(
+            select(
+                posts_table.c.id,
+                posts_table.c.topic,
+                posts_table.c.status,
+                posts_table.c.publish_attempts,
+                posts_table.c.last_error_tag,
+                posts_table.c.last_error_message,
+                posts_table.c.created_at,
+            )
+            .where(posts_table.c.status.in_(list(RETRYABLE_STATUSES)))
+            .order_by(posts_table.c.created_at.desc(), posts_table.c.id.desc())
+            .limit(safe_limit)
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def save_published_post(
+    media_id: str,
+    topic: dict,
+    content: dict,
+    strategy: dict,
+    *,
+    status: str = POST_STATUS_PUBLISHED_ACTIVE,
+) -> int:
+    """
+    Backward-compatible helper used by legacy paths and migration scripts.
+    """
+    post_id = create_generated_post(
+        topic=topic,
+        content=content,
+        strategy=strategy,
+        status=POST_STATUS_GENERATED,
+    )
+    mark_post_publish_attempt(post_id)
+    mark_post_published(post_id=post_id, media_id=media_id, status=status)
     return int(post_id)
 
 
@@ -517,8 +696,10 @@ def list_posts_for_metrics_sync(limit: int = 50) -> list[dict]:
                 posts_table.c.ig_media_id,
                 posts_table.c.topic,
                 posts_table.c.published_at,
+                posts_table.c.status,
+                posts_table.c.ig_status,
             )
-            .where(posts_table.c.status == "published")
+            .where(posts_table.c.status.in_(list(PUBLISHED_STATUSES)))
             .where(posts_table.c.ig_media_id.is_not(None))
             .where(posts_table.c.ig_media_id != "")
             .order_by(posts_table.c.published_at.desc(), posts_table.c.id.desc())
@@ -602,6 +783,36 @@ def save_metrics_snapshot_by_media_id(
     )
 
 
+def mark_post_ig_deleted_by_media_id(ig_media_id: str, *, reason: str | None = None) -> bool:
+    ensure_schema()
+    media_id = str(ig_media_id or "").strip()
+    if not media_id:
+        return False
+    with get_engine().begin() as conn:
+        row = conn.execute(
+            select(posts_table.c.id).where(posts_table.c.ig_media_id == media_id).limit(1)
+        ).mappings().first()
+    if not row:
+        return False
+    mark_post_ig_deleted(post_id=int(row["id"]), reason=reason)
+    return True
+
+
+def mark_post_ig_active_by_media_id(ig_media_id: str) -> bool:
+    ensure_schema()
+    media_id = str(ig_media_id or "").strip()
+    if not media_id:
+        return False
+    with get_engine().begin() as conn:
+        row = conn.execute(
+            select(posts_table.c.id).where(posts_table.c.ig_media_id == media_id).limit(1)
+        ).mappings().first()
+    if not row:
+        return False
+    mark_post_ig_active(post_id=int(row["id"]))
+    return True
+
+
 def list_posts(limit: int = 50) -> list[dict]:
     ensure_schema()
     safe_limit = max(1, min(int(limit or 50), 200))
@@ -613,10 +824,18 @@ def list_posts(limit: int = 50) -> list[dict]:
                 posts_table.c.topic,
                 posts_table.c.virality_score,
                 posts_table.c.status,
+                posts_table.c.ig_status,
                 posts_table.c.source_count,
+                posts_table.c.publish_attempts,
+                posts_table.c.last_publish_attempt_at,
+                posts_table.c.last_error_tag,
+                posts_table.c.last_error_code,
+                posts_table.c.last_error_message,
+                posts_table.c.ig_last_checked_at,
                 posts_table.c.published_at,
+                posts_table.c.created_at,
             )
-            .order_by(posts_table.c.published_at.desc(), posts_table.c.id.desc())
+            .order_by(posts_table.c.created_at.desc(), posts_table.c.id.desc())
             .limit(safe_limit)
         ).mappings().all()
         if not post_rows:
@@ -669,6 +888,9 @@ def list_posts(limit: int = 50) -> list[dict]:
     out = []
     for row in post_rows:
         published_at = row["published_at"]
+        created_at = row["created_at"]
+        last_publish_attempt_at = row["last_publish_attempt_at"]
+        ig_last_checked_at = row["ig_last_checked_at"]
         metrics = latest_metrics_by_post.get(row["id"], {})
         out.append(
             {
@@ -676,9 +898,21 @@ def list_posts(limit: int = 50) -> list[dict]:
                 "ig_media_id": row["ig_media_id"],
                 "topic": row["topic"],
                 "status": row["status"],
+                "ig_status": row["ig_status"],
                 "virality_score": row["virality_score"],
                 "source_count": row["source_count"],
+                "publish_attempts": row["publish_attempts"],
+                "last_publish_attempt_at": (
+                    last_publish_attempt_at.isoformat() if last_publish_attempt_at else None
+                ),
+                "last_error_tag": row["last_error_tag"],
+                "last_error_code": row["last_error_code"],
+                "last_error_message": row["last_error_message"],
+                "ig_last_checked_at": (
+                    ig_last_checked_at.isoformat() if ig_last_checked_at else None
+                ),
                 "published_at": published_at.isoformat() if published_at else None,
+                "created_at": created_at.isoformat() if created_at else None,
                 "source_urls": sources_by_post.get(row["id"], []),
                 "metrics_collected_at": metrics.get("metrics_collected_at"),
                 "impressions": metrics.get("impressions"),

@@ -14,7 +14,12 @@ import time
 import requests
 
 from config.settings import GRAPH_API_VERSION, META_ACCESS_TOKEN
-from modules.post_store import list_posts_for_metrics_sync, save_metrics_snapshot
+from modules.post_store import (
+    list_posts_for_metrics_sync,
+    mark_post_ig_active,
+    mark_post_ig_deleted,
+    save_metrics_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +72,41 @@ def _is_meta_transient_error(resp: requests.Response) -> bool:
     if bool(err.get("is_transient")):
         return True
     code = err.get("code")
-    return code in {1, 2, 4, 17, 32, 613}
+    subcode = err.get("error_subcode")
+    return code in {1, 2, 4, 17, 32, 613} or subcode in {2207051, 2207085}
+
+
+def _meta_error_details_from_response(resp: requests.Response) -> dict:
+    details = {
+        "status_code": resp.status_code,
+        "code": None,
+        "subcode": None,
+        "message": "",
+        "text": "",
+    }
+    details["text"] = _meta_error_text(resp)
+    try:
+        payload = resp.json()
+    except ValueError:
+        details["message"] = (resp.text or "").strip()[:300]
+        return details
+    err = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(err, dict):
+        details["code"] = err.get("code")
+        details["subcode"] = err.get("error_subcode")
+        details["message"] = str(err.get("message") or "")[:300]
+    return details
+
+
+def _is_missing_or_deleted_media_error(error_text: str, *, code=None, subcode=None) -> bool:
+    low = (error_text or "").lower()
+    if code == 100 and subcode == 33:
+        return True
+    if "unsupported get request" in low and "subcode=33" in low:
+        return True
+    if "does not exist" in low and "object" in low:
+        return True
+    return False
 
 
 def _retry_sleep(attempt: int, *, base: float = 0.8, cap: float = 8.0):
@@ -99,7 +138,8 @@ def _graph_get(path: str, params: dict, *, timeout: int = 30, retries: int = 3) 
         if resp.ok:
             return resp.json()
 
-        err_text = _meta_error_text(resp)
+        details = _meta_error_details_from_response(resp)
+        err_text = details["text"]
         if attempt < attempts and _is_meta_transient_error(resp):
             logger.warning(
                 "Meta GET %s error transitorio (attempt %d/%d): %s. Reintentando...",
@@ -111,7 +151,10 @@ def _graph_get(path: str, params: dict, *, timeout: int = 30, retries: int = 3) 
             _retry_sleep(attempt)
             continue
 
-        raise RuntimeError(f"Meta GET {path} failed: {err_text}")
+        raise RuntimeError(
+            f"Meta GET {path} failed: {err_text}"
+            f" | details(code={details['code']},subcode={details['subcode']})"
+        )
 
     raise RuntimeError(f"Meta GET {path} failed after retries")
 
@@ -211,23 +254,33 @@ def sync_recent_post_metrics(limit: int = 30) -> dict:
 
     for row in posts:
         checked += 1
+        post_id = int(row["id"])
+        media_id = row.get("ig_media_id")
         try:
-            metrics, raw = fetch_media_metrics(row.get("ig_media_id"))
+            metrics, raw = fetch_media_metrics(media_id)
             save_metrics_snapshot(
-                post_id=int(row["id"]),
+                post_id=post_id,
                 metrics=metrics,
                 raw_payload=raw,
             )
+            mark_post_ig_active(post_id=post_id)
             updated += 1
             time.sleep(0.2)
         except Exception as e:
             failed += 1
+            err_text = str(e)
+            if _is_missing_or_deleted_media_error(err_text):
+                try:
+                    mark_post_ig_deleted(post_id=post_id, reason=err_text)
+                except Exception:
+                    pass
             if len(errors) < 20:
                 errors.append(
                     {
-                        "post_id": row.get("id"),
-                        "ig_media_id": row.get("ig_media_id"),
-                        "error": str(e),
+                        "post_id": post_id,
+                        "ig_media_id": media_id,
+                        "error": err_text,
+                        "deleted_or_unavailable": _is_missing_or_deleted_media_error(err_text),
                     }
                 )
 

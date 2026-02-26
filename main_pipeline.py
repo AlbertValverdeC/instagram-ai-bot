@@ -16,6 +16,7 @@ Usage:
 import argparse
 import json
 import logging
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -28,13 +29,78 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from config.settings import DATA_DIR, HISTORY_FILE, LOGS_DIR, OPENAI_API_KEY, OUTPUT_DIR
 from config.templates import TEMPLATES
 from modules.post_store import (
+    create_generated_post,
     ensure_schema as ensure_post_store_schema,
     find_duplicate_candidate,
     get_db_runtime_info,
-    save_published_post,
+    mark_post_publish_attempt,
+    mark_post_publish_error,
+    mark_post_published,
 )
 
 logger = logging.getLogger("pipeline")
+
+
+def _classify_publish_error(exc: Exception) -> dict:
+    """
+    Convert technical publish exceptions to a user-friendly error summary + tag.
+    """
+    raw = str(exc or "").strip()
+    low = raw.lower()
+
+    code_match = re.search(r"code=([-]?\d+)", raw)
+    subcode_match = re.search(r"subcode=([0-9]+)", raw)
+    code = code_match.group(1) if code_match else None
+    subcode = subcode_match.group(1) if subcode_match else None
+    code_label = f"{code}:{subcode}" if code and subcode else (code or subcode)
+
+    tag = "publish_unknown"
+    summary = (
+        "No se pudo publicar en Instagram por un error no clasificado. "
+        "Revisa el detalle técnico y reintenta."
+    )
+
+    if "image url is not valid for instagram graph api" in low:
+        tag = "image_url_invalid"
+        summary = (
+            "Meta no pudo acceder a las imágenes públicas del carrusel. "
+            "Verifica PUBLIC_IMAGE_BASE_URL y que los PNG respondan con HTTP 200."
+        )
+    elif (
+        "application request limit reached" in low
+        or subcode in {"2207051", "2207085"}
+        or code in {"4", "17", "32", "613"}
+    ):
+        tag = "meta_rate_limit"
+        summary = (
+            "Meta aplicó límite temporal de peticiones para esta app/cuenta. "
+            "Espera unos minutos y reintenta la publicación."
+        )
+    elif "unsupported get request" in low and subcode == "33":
+        tag = "ig_object_not_found"
+        summary = (
+            "Instagram no encontró el objeto solicitado (contenedor/media). "
+            "Normalmente se resuelve reintentando la publicación completa."
+        )
+    elif "unauthorized" in low or code == "190":
+        tag = "meta_auth"
+        summary = (
+            "Meta rechazó el token/permisos. Revisa META_ACCESS_TOKEN y permisos "
+            "instagram_content_publish/pages_*."
+        )
+    elif "fatal" in low and subcode == "2207085":
+        tag = "meta_fatal_after_limit"
+        summary = (
+            "Meta devolvió error fatal tras un límite de peticiones. "
+            "Reintenta más tarde para evitar bloqueo por rate-limit."
+        )
+
+    return {
+        "tag": tag,
+        "code": code_label,
+        "summary": summary,
+        "raw": raw[:2000],
+    }
 
 
 def _validate_required_keys(test_mode: bool, step: str | None):
@@ -336,24 +402,63 @@ def daily_pipeline(
         logger.info("\n🚀 STEP 5: Publish — Uploading to Instagram...")
         from modules.publisher import publish, save_to_history
 
-        media_id = publish(image_paths, content, strategy)
-        logger.info(f"✓ Published! Media ID: {media_id}")
-
+        post_id = None
         try:
-            post_id = save_published_post(
-                media_id=media_id,
+            post_id = create_generated_post(
                 topic=topic,
                 content=content,
                 strategy=strategy,
-                status="published",
             )
-            logger.info(f"✓ Saved to post store (id={post_id})")
+            logger.info(
+                "✓ Saved generated carousel to post store (id=%s, status=generated)",
+                post_id,
+            )
         except Exception as e:
-            logger.warning(f"Could not persist post in DB: {e}")
+            raise RuntimeError(
+                "No se pudo guardar el carrusel generado en DB antes de publicar. "
+                "Abortando LIVE para no perder trazabilidad."
+            ) from e
 
-        # Save to history
-        save_to_history(media_id, topic)
-        logger.info("✓ Saved to history")
+        try:
+            mark_post_publish_attempt(post_id)
+            media_id = publish(image_paths, content, strategy)
+            logger.info(f"✓ Published! Media ID: {media_id}")
+
+            try:
+                mark_post_published(post_id=post_id, media_id=media_id)
+                logger.info(
+                    "✓ Updated post store (id=%s, status=published_active)",
+                    post_id,
+                )
+            except Exception as e:
+                logger.warning(f"Could not update post store publication status: {e}")
+
+            # Save to history
+            save_to_history(media_id, topic)
+            logger.info("✓ Saved to history")
+        except Exception as e:
+            info = _classify_publish_error(e)
+            try:
+                mark_post_publish_error(
+                    post_id=post_id,
+                    error_tag=info["tag"],
+                    error_code=info["code"],
+                    error_message=f"{info['summary']} | {info['raw']}",
+                )
+                logger.error(
+                    "✗ Publish failed. Post marked as publish_error "
+                    "(id=%s, tag=%s, code=%s)",
+                    post_id,
+                    info["tag"],
+                    info["code"] or "-",
+                )
+            except Exception as db_e:
+                logger.warning(f"Could not persist publish error in DB: {db_e}")
+
+            raise RuntimeError(
+                f"{info['summary']} [tag={info['tag']}, code={info['code'] or '-'}] "
+                f"Detalle técnico: {info['raw']}"
+            ) from e
 
     # ── Cleanup ──────────────────────────────────────────────────────────
     if not dry_run and not test_mode:

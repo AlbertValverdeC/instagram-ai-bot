@@ -163,11 +163,26 @@ def _candidate_models() -> list[str]:
 
 
 def _image_from_bytes(image_bytes: bytes):
-    """Convert image bytes to resized RGBA PIL image."""
+    """Convert image bytes to RGBA PIL image, crop-to-fill then resize to slide dimensions."""
     from PIL import Image
 
     img = Image.open(io.BytesIO(image_bytes))
     img = img.convert("RGBA")
+
+    # Crop to target aspect ratio (center crop) to avoid stretching
+    src_w, src_h = img.size
+    target_ratio = SLIDE_WIDTH / SLIDE_HEIGHT  # 1080/1350 = 0.8
+
+    if src_w / src_h > target_ratio:
+        # Source is wider: crop sides
+        new_w = int(src_h * target_ratio)
+        offset = (src_w - new_w) // 2
+        img = img.crop((offset, 0, offset + new_w, src_h))
+    elif src_w / src_h < target_ratio:
+        # Source is taller: crop bottom (keep top where subject is)
+        new_h = int(src_w / target_ratio)
+        img = img.crop((0, 0, src_w, new_h))
+
     return img.resize((SLIDE_WIDTH, SLIDE_HEIGHT), Image.LANCZOS)
 
 

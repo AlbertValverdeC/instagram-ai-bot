@@ -154,9 +154,11 @@ Create a prompt that generates an image DIRECTLY RELATED to this specific topic.
 Make the image IMMEDIATELY recognizable as related to "{topic_en}".
 
 CELEBRITY / PERSON RULES:
-- If the topic is about a specific person (CEO, founder, politician, celebrity),
-  INCLUDE THEM BY NAME in the prompt (e.g. "Elon Musk", "Sam Altman", "Tim Cook").
-  Show them in a dramatic, cinematic portrait style.
+- If the topic is about a specific well-known person (CEO, founder, politician, celebrity, streamer),
+  INCLUDE THEM BY FULL NAME in the prompt (e.g. "Elon Musk", "Sam Altman", "Tim Cook").
+  For streamers or internet personalities, also add a brief physical description
+  (e.g. "ElXokas, a bearded Spanish man with glasses") to help the model generate their likeness.
+  Show them in a dramatic, cinematic portrait style — face clearly visible, looking at camera.
 - If no specific person is involved, use compelling visual metaphors instead.
 
 BRAND / LOGO RULES:

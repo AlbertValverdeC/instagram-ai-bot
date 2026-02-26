@@ -13,6 +13,7 @@ from dashboard.config import (
     ensure_dirs,
 )
 from dashboard.routes import register_blueprints
+from dashboard.services.scheduler import start_scheduler_daemon
 
 
 def create_app() -> Flask:
@@ -20,12 +21,13 @@ def create_app() -> Flask:
     ensure_dirs()
 
     register_blueprints(app)
+    start_scheduler_daemon(app)
 
     @app.after_request
     def add_cors_headers(response):
         response.headers.setdefault("Access-Control-Allow-Origin", "*")
         response.headers.setdefault("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Token")
-        response.headers.setdefault("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        response.headers.setdefault("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
         return response
 
     @app.route("/slides/<path:filename>")

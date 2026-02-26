@@ -10,13 +10,40 @@ import { KeysModal } from './components/modals/KeysModal';
 import { PromptsModal } from './components/modals/PromptsModal';
 import { SourcesModal } from './components/modals/SourcesModal';
 import { Controls } from './components/pipeline/Controls';
-import { ConsoleOutput } from './components/pipeline/ConsoleOutput';
+import { SchedulerPanel } from './components/scheduler/SchedulerPanel';
+import { ActivityMonitor } from './components/pipeline/ActivityMonitor';
 import { PostDetailModal } from './components/posts/PostDetailModal';
 import { PostsHistory } from './components/posts/PostsHistory';
+import { useActivityLog } from './hooks/useActivityLog';
 import { usePipelineState } from './hooks/usePipelineState';
 import type { ApiStateResponse, PostRecord, TextProposal } from './types';
 
 const API_TOKEN_STORAGE_KEY = 'dashboard_api_token';
+
+// Patterns to parse from incremental E2E pipeline output
+const E2E_PATTERNS: Array<{
+  key: string;
+  regex: RegExp;
+  status: 'info' | 'running' | 'success' | 'error';
+  message: (m: RegExpMatchArray) => string;
+}> = [
+  { key: 's1-start', regex: /STEP 1: Research/, status: 'running', message: () => 'Investigando temas trending...' },
+  { key: 's1-topic', regex: /✓ Topic: (.+)/, status: 'success', message: (m) => `Tema: ${m[1].substring(0, 80)}` },
+  { key: 's1-viral', regex: /Virality: ([\d.]+)\/10/, status: 'info', message: (m) => `Virality score: ${m[1]}/10` },
+  { key: 's2-start', regex: /STEP 2: Content/, status: 'running', message: () => 'Generando texto del carrusel...' },
+  { key: 's2-done', regex: /✓ Generated (\d+) slides/, status: 'success', message: (m) => `${m[1]} slides de texto generados` },
+  { key: 's3-start', regex: /STEP 3: Design/, status: 'running', message: () => 'Diseñando imágenes del carrusel...' },
+  { key: 's3-cover', regex: /cover background generated/, status: 'info', message: () => 'Fondo de portada IA generado' },
+  { key: 's3-done', regex: /✓ Created (\d+) slide images/, status: 'success', message: (m) => `${m[1]} imágenes creadas` },
+  { key: 's4-start', regex: /STEP 4: Engagement/, status: 'running', message: () => 'Calculando estrategia de engagement...' },
+  { key: 's4-done', regex: /✓ Day type: (\S+)/, status: 'success', message: (m) => `Estrategia: ${m[1]}` },
+  { key: 's5-start', regex: /STEP 5: Publish/, status: 'running', message: () => 'Subiendo a Instagram...' },
+  { key: 's5-saved', regex: /Saved generated carousel to post store \(id=(\d+)/, status: 'info', message: (m) => `Carrusel guardado en BBDD (id=${m[1]})` },
+  { key: 's5-ratelimit', regex: /Application request limit reached/, status: 'error', message: () => 'Meta API rate limit alcanzado, reintentando...' },
+  { key: 's5-recover', regex: /post IS live on IG! Recovered media_id=(\S+)/, status: 'success', message: (m) => `Recuperado: post live en IG (${m[1]})` },
+  { key: 's5-done', regex: /✓ Published! Media ID: (\S+)/, status: 'success', message: (m) => `Publicado! Media ID: ${m[1]}` },
+  { key: 'done-history', regex: /✓ Saved to history/, status: 'success', message: () => 'Guardado en historial' },
+];
 
 function errorStatus(error: unknown): number | undefined {
   const err = error as Error & { status?: number };
@@ -63,8 +90,6 @@ export default function App() {
   const [postsLoading, setPostsLoading] = useState(true);
   const [dbStatusText, setDbStatusText] = useState('Cargando estado de DB...');
   const [dbStatusColor, setDbStatusColor] = useState<'green' | 'orange' | 'red' | 'dim'>('dim');
-  const [syncMessage, setSyncMessage] = useState('');
-  const [syncColor, setSyncColor] = useState<'green' | 'orange' | 'red' | 'dim'>('dim');
   const [syncing, setSyncing] = useState(false);
 
   const [detailOpen, setDetailOpen] = useState(false);
@@ -80,7 +105,10 @@ export default function App() {
   const [sourcesOpen, setSourcesOpen] = useState(false);
 
   const { statusState, running, refreshStatus, setRunningLabel, setStatusState } = usePipelineState();
+  const { entries, activeOperation, e2eRawOutput, pushEntry, startOperation, endOperation, updateE2eRawOutput, clearLog } = useActivityLog();
   const prevStatusRef = useRef(statusState.status);
+  const prevOutputRef = useRef(statusState.output);
+  const seenE2eKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     setApiTokenGetter(() => apiToken);
@@ -150,6 +178,47 @@ export default function App() {
     }
     prevStatusRef.current = next;
   }, [statusState.status, loadState]);
+
+  // E2E bridge: observe pipeline status transitions
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    const next = statusState.status;
+
+    if (prev !== 'running' && next === 'running') {
+      seenE2eKeysRef.current.clear();
+      startOperation(4, statusState.mode || 'Pipeline E2E');
+      pushEntry('running', `Pipeline ${statusState.mode || 'E2E'} iniciado...`, 4);
+    }
+    if (prev === 'running' && next === 'done') {
+      const elapsed = statusState.elapsed ? `${statusState.elapsed}s` : '';
+      pushEntry('success', `Pipeline completado ${elapsed}`.trim(), 4);
+      endOperation();
+    }
+    if (prev === 'running' && next === 'error') {
+      pushEntry('error', statusState.error_summary || 'Error en pipeline', 4);
+      endOperation();
+    }
+  }, [statusState.status, statusState.mode, statusState.elapsed, statusState.error_summary, pushEntry, startOperation, endOperation]);
+
+  // E2E bridge: parse incremental output for step-by-step entries
+  useEffect(() => {
+    const output = statusState.output;
+    if (output) {
+      updateE2eRawOutput(output);
+    }
+
+    if (statusState.status !== 'running' || !output) return;
+
+    const seen = seenE2eKeysRef.current;
+    for (const pat of E2E_PATTERNS) {
+      if (seen.has(pat.key)) continue;
+      const match = output.match(pat.regex);
+      if (match) {
+        seen.add(pat.key);
+        pushEntry(pat.status, pat.message(match), 4);
+      }
+    }
+  }, [statusState.output, statusState.status, pushEntry, updateE2eRawOutput]);
 
   useEffect(() => {
     if (proposals.length === 0) {
@@ -223,8 +292,9 @@ export default function App() {
 
   const generateProposals = useCallback(async () => {
     setGeneratingProposals(true);
-    setSyncMessage('Nivel 1 en ejecución: buscando noticias y creando propuestas...');
-    setSyncColor('dim');
+    startOperation(1, 'Generando propuestas');
+    pushEntry('running', 'Buscando noticias y creando propuestas...', 1);
+    const t0 = Date.now();
     try {
       const topic = topicInput.trim();
       const data = await apiClient.generateProposals({ topic: topic || undefined, count: 3 });
@@ -234,16 +304,17 @@ export default function App() {
       setProposals(nextProposals);
       setProposalTopics(nextTopics as Record<string, unknown>[]);
       setSelectedProposalId(nextProposals.length > 0 ? String(nextProposals[0].id || 'p1') : null);
-      setSyncMessage(`Nivel 1 completado: ${nextProposals.length} propuestas generadas.`);
-      setSyncColor('green');
+      const dur = Math.round((Date.now() - t0) / 1000);
+      pushEntry('success', `${nextProposals.length} propuestas generadas en ${dur}s`, 1);
+      endOperation();
       await Promise.all([loadPosts(), loadDbStatus()]);
     } catch (error) {
-      setSyncMessage(`Nivel 1 falló: ${errorMessage(error)}`);
-      setSyncColor('red');
+      pushEntry('error', `Nivel 1 falló: ${errorMessage(error)}`, 1);
+      endOperation();
     } finally {
       setGeneratingProposals(false);
     }
-  }, [loadDbStatus, loadPosts, topicInput]);
+  }, [loadDbStatus, loadPosts, topicInput, pushEntry, startOperation, endOperation]);
 
   const createDraftFromProposal = useCallback(async () => {
     if (!dashboardState.topic) {
@@ -261,8 +332,9 @@ export default function App() {
     const matchingTopic = (proposalTopics[selectedIndex] || dashboardState.topic) as Record<string, unknown>;
 
     setCreatingDraft(true);
-    setSyncMessage('Nivel 2 en ejecución: creando draft y slides...');
-    setSyncColor('dim');
+    startOperation(2, 'Creando draft y slides');
+    pushEntry('running', 'Creando draft y slides...', 2);
+    const t0 = Date.now();
     try {
       const data = await apiClient.createDraft({
         topic: matchingTopic,
@@ -276,21 +348,21 @@ export default function App() {
         slides: data.slides
       }));
       setSlidesCacheBust(Date.now());
-      setSyncMessage(`Nivel 2 completado: draft #${data.post_id} guardado en BBDD.`);
-      setSyncColor('green');
+      const dur = Math.round((Date.now() - t0) / 1000);
+      pushEntry('success', `Draft #${data.post_id} guardado en ${dur}s`, 2);
+      endOperation();
       await loadPosts();
     } catch (error) {
-      setSyncMessage(`Nivel 2 falló: ${errorMessage(error)}`);
-      setSyncColor('red');
+      pushEntry('error', `Nivel 2 falló: ${errorMessage(error)}`, 2);
+      endOperation();
     } finally {
       setCreatingDraft(false);
     }
-  }, [dashboardState.topic, proposals, proposalTopics, selectedProposalId, selectedTemplate, loadPosts]);
+  }, [dashboardState.topic, proposals, proposalTopics, selectedProposalId, selectedTemplate, loadPosts, pushEntry, startOperation, endOperation]);
 
   const syncNow = useCallback(async () => {
     setSyncing(true);
-    setSyncMessage('Sincronizando estado + métricas de Instagram...');
-    setSyncColor('dim');
+    pushEntry('running', 'Sincronizando estado + métricas de Instagram...', null);
     try {
       const data = await apiClient.syncInstagram(30);
       const checked = data.checked ?? 0;
@@ -298,38 +370,39 @@ export default function App() {
       const failed = data.failed ?? 0;
       const pendingChecked = data.pending_checked ?? 0;
       const pendingReconciled = data.pending_reconciled ?? 0;
-      setSyncMessage(
-        `Sync IG completado: revisados ${checked}, actualizados ${updated}, fallidos ${failed}. ` +
-          `Pendientes revisados ${pendingChecked}, reconciliados ${pendingReconciled}.`
+      pushEntry(
+        failed > 0 ? 'error' : 'success',
+        `Sync IG: revisados ${checked}, actualizados ${updated}, fallidos ${failed}. Pendientes revisados ${pendingChecked}, reconciliados ${pendingReconciled}.`,
+        null,
       );
-      setSyncColor(failed > 0 ? 'orange' : 'green');
       await loadPosts();
     } catch (error) {
-      setSyncMessage(errorMessage(error));
-      setSyncColor('red');
+      pushEntry('error', `Sync falló: ${errorMessage(error)}`, null);
     } finally {
       setSyncing(false);
     }
-  }, [loadPosts]);
+  }, [loadPosts, pushEntry]);
 
   const publishDraft = useCallback(
     async (postId: number) => {
       if (!window.confirm(`¿Publicar draft #${postId} en Instagram ahora?`)) {
         return;
       }
-      setSyncMessage(`Nivel 3 en ejecución: publicando draft #${postId}...`);
-      setSyncColor('dim');
+      startOperation(3, `Publicando draft #${postId}`);
+      pushEntry('running', `Publicando draft #${postId}...`, 3);
+      const t0 = Date.now();
       try {
         const data = await apiClient.publishPost(postId);
-        setSyncMessage(`Nivel 3 completado (#${postId}) → Media ID ${data.media_id || '-'}`);
-        setSyncColor('green');
+        const dur = Math.round((Date.now() - t0) / 1000);
+        pushEntry('success', `Draft #${postId} publicado en ${dur}s → Media ID ${data.media_id || '-'}`, 3);
+        endOperation();
         await loadPosts();
       } catch (error) {
-        setSyncMessage(`Nivel 3 falló (#${postId}): ${errorMessage(error)}`);
-        setSyncColor('red');
+        pushEntry('error', `Nivel 3 falló (#${postId}): ${errorMessage(error)}`, 3);
+        endOperation();
       }
     },
-    [loadPosts]
+    [loadPosts, pushEntry, startOperation, endOperation]
   );
 
   const retryPublish = useCallback(
@@ -337,25 +410,29 @@ export default function App() {
       if (!window.confirm(`¿Reintentar publicación del post #${postId}?`)) {
         return;
       }
-      setSyncMessage(`Reintentando publicación de #${postId}...`);
-      setSyncColor('dim');
+      startOperation(3, `Reintentando #${postId}`);
+      pushEntry('running', `Reintentando publicación de #${postId}...`, 3);
+      const t0 = Date.now();
       try {
         const data = await apiClient.retryPublish(postId);
         const reconciled = Boolean((data as { reconciled?: boolean }).reconciled);
-        setSyncMessage(
+        const dur = Math.round((Date.now() - t0) / 1000);
+        pushEntry(
+          'success',
           reconciled
-            ? `Reconciliado OK (#${postId}) → Media ID ${data.media_id || '-'}`
-            : `Reintento OK (#${postId}) → Media ID ${data.media_id || '-'}`
+            ? `Reconciliado OK (#${postId}) en ${dur}s → Media ID ${data.media_id || '-'}`
+            : `Reintento OK (#${postId}) en ${dur}s → Media ID ${data.media_id || '-'}`,
+          3,
         );
-        setSyncColor('green');
+        endOperation();
       } catch (error) {
-        setSyncMessage(`Reintento falló (#${postId}): ${errorMessage(error)}`);
-        setSyncColor('red');
+        pushEntry('error', `Reintento falló (#${postId}): ${errorMessage(error)}`, 3);
+        endOperation();
       } finally {
         await loadPosts();
       }
     },
-    [loadPosts]
+    [loadPosts, pushEntry, startOperation, endOperation]
   );
 
   const openPostDetail = useCallback(async (postId: number) => {
@@ -421,6 +498,8 @@ export default function App() {
           onSearchTopic={searchTopicOnly}
         />
 
+        <SchedulerPanel />
+
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border-dark bg-secondary-dark p-4">
           <div>
             <p className="text-sm font-semibold text-white">Flujo por niveles</p>
@@ -447,11 +526,17 @@ export default function App() {
           onCreateDraft={createDraftFromProposal}
         />
 
-        {/* Content Grid: Topic+Console left, Slides right */}
+        <ActivityMonitor
+          entries={entries}
+          activeOperation={activeOperation}
+          e2eRawOutput={e2eRawOutput}
+          onClear={clearLog}
+        />
+
+        {/* Content Grid: Topic left, Slides right */}
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-          <div className="flex flex-col gap-6 lg:col-span-5">
+          <div className="lg:col-span-5">
             <TopicCard topic={dashboardState.topic} />
-            <ConsoleOutput status={statusState.status} elapsed={statusState.elapsed} output={statusState.output} />
           </div>
           <div className="lg:col-span-7">
             <SlidesPreview slides={dashboardState.slides} cacheBust={slidesCacheBust} onOpen={openLightbox} />
@@ -463,8 +548,6 @@ export default function App() {
           loading={postsLoading}
           dbStatusText={dbStatusText}
           dbStatusColor={dbStatusColor}
-          syncMessage={syncMessage}
-          syncColor={syncColor}
           syncing={syncing}
           onSync={syncNow}
           onPublish={publishDraft}

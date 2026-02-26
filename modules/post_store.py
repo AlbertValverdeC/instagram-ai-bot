@@ -30,10 +30,12 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    delete,
     func,
     inspect,
     text,
     select,
+    update,
 )
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
@@ -124,6 +126,44 @@ post_metrics_table = Table(
     Column("engagement_rate", Float, nullable=True),
     Column("raw_payload", JSON, nullable=True),
 )
+
+scheduler_config_table = Table(
+    "scheduler_config",
+    _metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("enabled", Integer, nullable=False, server_default="0"),
+    Column("schedule", JSON, nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+content_queue_table = Table(
+    "content_queue",
+    _metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("scheduled_date", String(10), nullable=False, index=True),
+    Column("scheduled_time", String(5), nullable=True),
+    Column("topic", Text, nullable=True),
+    Column("template", Integer, nullable=True),
+    Column("status", String(20), nullable=False, server_default="pending", index=True),
+    Column("post_id", Integer, ForeignKey("posts.id", ondelete="SET NULL"), nullable=True),
+    Column("result_message", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("started_at", DateTime(timezone=True), nullable=True),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+    UniqueConstraint("scheduled_date", name="uq_content_queue_date"),
+)
+
+DEFAULT_SCHEDULE = {
+    "monday":    {"enabled": True, "time": "08:30"},
+    "tuesday":   {"enabled": True, "time": "08:30"},
+    "wednesday": {"enabled": True, "time": "08:30"},
+    "thursday":  {"enabled": True, "time": "08:30"},
+    "friday":    {"enabled": True, "time": "08:30"},
+    "saturday":  {"enabled": True, "time": "10:00"},
+    "sunday":    {"enabled": False, "time": None},
+}
+
+DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 
 def _utc_now() -> datetime:
@@ -464,6 +504,9 @@ def _insert_post_sources(conn, *, post_id: int, source_urls: list[str]) -> int:
         if not canon or not shash:
             continue
         try:
+            # Use SAVEPOINT so a duplicate IntegrityError doesn't abort the
+            # outer PostgreSQL transaction (SQLite ignores this harmlessly).
+            nested = conn.begin_nested()
             conn.execute(
                 post_sources_table.insert().values(
                     post_id=post_id,
@@ -473,9 +516,10 @@ def _insert_post_sources(conn, *, post_id: int, source_urls: list[str]) -> int:
                     article_published_at=None,
                 )
             )
+            nested.commit()
             source_count += 1
         except IntegrityError:
-            # Source already exists from another post -> useful for duplicate diagnostics.
+            nested.rollback()
             logger.warning("Source URL already exists in DB (duplicate hash): %s", canon)
     return source_count
 
@@ -1047,3 +1091,227 @@ def list_posts(limit: int = 50) -> list[dict]:
             }
         )
     return out
+
+
+# ---------------------------------------------------------------------------
+# Scheduler config CRUD
+# ---------------------------------------------------------------------------
+
+def get_scheduler_config() -> dict:
+    ensure_schema()
+    with get_engine().begin() as conn:
+        row = conn.execute(
+            select(
+                scheduler_config_table.c.enabled,
+                scheduler_config_table.c.schedule,
+                scheduler_config_table.c.updated_at,
+            )
+            .order_by(scheduler_config_table.c.id.asc())
+            .limit(1)
+        ).mappings().first()
+    if not row:
+        return {"enabled": False, "schedule": dict(DEFAULT_SCHEDULE)}
+    schedule = row["schedule"]
+    if isinstance(schedule, str):
+        schedule = json.loads(schedule)
+    return {
+        "enabled": bool(row["enabled"]),
+        "schedule": schedule or dict(DEFAULT_SCHEDULE),
+    }
+
+
+def save_scheduler_config(enabled: bool, schedule: dict) -> None:
+    ensure_schema()
+    now = _utc_now()
+    with get_engine().begin() as conn:
+        existing = conn.execute(
+            select(scheduler_config_table.c.id)
+            .order_by(scheduler_config_table.c.id.asc())
+            .limit(1)
+        ).mappings().first()
+        if existing:
+            conn.execute(
+                update(scheduler_config_table)
+                .where(scheduler_config_table.c.id == existing["id"])
+                .values(enabled=int(enabled), schedule=schedule, updated_at=now)
+            )
+        else:
+            conn.execute(
+                scheduler_config_table.insert().values(
+                    enabled=int(enabled), schedule=schedule, updated_at=now
+                )
+            )
+
+
+# ---------------------------------------------------------------------------
+# Content queue CRUD
+# ---------------------------------------------------------------------------
+
+def _queue_row_to_dict(row) -> dict:
+    d = dict(row)
+    for key in ("created_at", "started_at", "completed_at"):
+        val = d.get(key)
+        if isinstance(val, datetime):
+            d[key] = val.isoformat()
+    return d
+
+
+def get_queue_items(days_back: int = 3, days_forward: int = 14) -> list[dict]:
+    ensure_schema()
+    from config.settings import TIMEZONE
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(TIMEZONE)
+    now = datetime.now(tz)
+    start = (now - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    end = (now + timedelta(days=days_forward)).strftime("%Y-%m-%d")
+    with get_engine().begin() as conn:
+        rows = conn.execute(
+            select(content_queue_table)
+            .where(content_queue_table.c.scheduled_date >= start)
+            .where(content_queue_table.c.scheduled_date <= end)
+            .order_by(content_queue_table.c.scheduled_date.asc())
+        ).mappings().all()
+    return [_queue_row_to_dict(r) for r in rows]
+
+
+def get_queue_item_for_date(date_str: str) -> dict | None:
+    ensure_schema()
+    with get_engine().begin() as conn:
+        row = conn.execute(
+            select(content_queue_table)
+            .where(content_queue_table.c.scheduled_date == date_str)
+            .limit(1)
+        ).mappings().first()
+    return _queue_row_to_dict(row) if row else None
+
+
+def add_queue_item(
+    scheduled_date: str,
+    topic: str | None = None,
+    template: int | None = None,
+    scheduled_time: str | None = None,
+) -> int:
+    ensure_schema()
+    with get_engine().begin() as conn:
+        result = conn.execute(
+            content_queue_table.insert().values(
+                scheduled_date=scheduled_date,
+                scheduled_time=scheduled_time,
+                topic=topic,
+                template=template,
+                status="pending",
+            )
+        )
+    return int(result.inserted_primary_key[0])
+
+
+def remove_queue_item(item_id: int) -> bool:
+    ensure_schema()
+    with get_engine().begin() as conn:
+        row = conn.execute(
+            select(content_queue_table.c.status)
+            .where(content_queue_table.c.id == int(item_id))
+            .limit(1)
+        ).mappings().first()
+        if not row or row["status"] != "pending":
+            return False
+        conn.execute(
+            delete(content_queue_table)
+            .where(content_queue_table.c.id == int(item_id))
+        )
+    return True
+
+
+def auto_fill_queue(days: int = 7) -> dict:
+    ensure_schema()
+    config = get_scheduler_config()
+    schedule = config.get("schedule", DEFAULT_SCHEDULE)
+
+    from config.settings import TIMEZONE
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(TIMEZONE)
+    today = datetime.now(tz).date()
+
+    created = []
+    skipped_existing = 0
+    skipped_disabled = 0
+
+    for offset in range(days):
+        d = today + timedelta(days=offset)
+        date_str = d.strftime("%Y-%m-%d")
+        day_name = DAY_NAMES[d.weekday()]
+        day_cfg = schedule.get(day_name, {})
+
+        if not day_cfg.get("enabled", False):
+            skipped_disabled += 1
+            continue
+
+        existing = get_queue_item_for_date(date_str)
+        if existing:
+            skipped_existing += 1
+            continue
+
+        time_str = day_cfg.get("time")
+        item_id = add_queue_item(
+            scheduled_date=date_str,
+            scheduled_time=time_str,
+        )
+        created.append({"id": item_id, "scheduled_date": date_str, "scheduled_time": time_str})
+
+    return {
+        "created": created,
+        "skipped_existing": skipped_existing,
+        "skipped_disabled": skipped_disabled,
+    }
+
+
+def mark_queue_item_processing(item_id: int) -> None:
+    ensure_schema()
+    with get_engine().begin() as conn:
+        conn.execute(
+            update(content_queue_table)
+            .where(content_queue_table.c.id == int(item_id))
+            .values(status="processing", started_at=_utc_now())
+        )
+
+
+def mark_queue_item_completed(item_id: int, post_id: int | None = None, message: str | None = None) -> None:
+    ensure_schema()
+    with get_engine().begin() as conn:
+        conn.execute(
+            update(content_queue_table)
+            .where(content_queue_table.c.id == int(item_id))
+            .values(
+                status="completed",
+                post_id=post_id,
+                result_message=message,
+                completed_at=_utc_now(),
+            )
+        )
+
+
+def mark_queue_item_error(item_id: int, message: str | None = None) -> None:
+    ensure_schema()
+    with get_engine().begin() as conn:
+        conn.execute(
+            update(content_queue_table)
+            .where(content_queue_table.c.id == int(item_id))
+            .values(
+                status="error",
+                result_message=(message or "")[:2000] or None,
+                completed_at=_utc_now(),
+            )
+        )
+
+
+def recover_stale_processing(max_age_hours: int = 2) -> int:
+    ensure_schema()
+    cutoff = _utc_now() - timedelta(hours=max_age_hours)
+    with get_engine().begin() as conn:
+        result = conn.execute(
+            update(content_queue_table)
+            .where(content_queue_table.c.status == "processing")
+            .where(content_queue_table.c.started_at < cutoff)
+            .values(status="pending", started_at=None)
+        )
+    return result.rowcount

@@ -14,6 +14,7 @@ import type {
   TextProposal,
   SyncMetricsResponse
 } from '../types';
+import type { SchedulerState, SchedulerConfig } from '../types/scheduler';
 
 let tokenGetter: (() => string) | null = null;
 
@@ -122,5 +123,25 @@ export const apiClient = {
     apiFetch<SyncMetricsResponse>('/api/posts/sync-instagram', {
       method: 'POST',
       body: JSON.stringify({ limit })
+    }),
+  getScheduler: () => apiFetch<SchedulerState>('/api/scheduler'),
+  saveSchedulerConfig: (config: SchedulerConfig) =>
+    apiFetch<{ saved: boolean }>('/api/scheduler/config', {
+      method: 'POST',
+      body: JSON.stringify(config)
+    }),
+  addQueueItem: (payload: { scheduled_date: string; topic?: string; template?: number; scheduled_time?: string }) =>
+    apiFetch<{ id: number; scheduled_date: string }>('/api/scheduler/queue', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  removeQueueItem: (id: number) =>
+    apiFetch<{ deleted: boolean }>(`/api/scheduler/queue/${id}`, {
+      method: 'DELETE'
+    }),
+  autoFillQueue: (payload: { days?: number } = {}) =>
+    apiFetch<{ created: Array<{ id: number; scheduled_date: string }>; skipped_existing: number; skipped_disabled: number }>('/api/scheduler/queue/auto-fill', {
+      method: 'POST',
+      body: JSON.stringify(payload)
     })
 };

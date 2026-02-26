@@ -7,6 +7,7 @@ from dashboard.routes.pipeline import bp as pipeline_bp
 from dashboard.routes.posts import bp as posts_bp
 from dashboard.routes.prompts import bp as prompts_bp
 from dashboard.routes.research import bp as research_bp
+from dashboard.routes.scheduler import bp as scheduler_bp
 from dashboard.routes.workflow import bp as workflow_bp
 
 
@@ -17,3 +18,4 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(research_bp)
     app.register_blueprint(posts_bp)
     app.register_blueprint(workflow_bp)
+    app.register_blueprint(scheduler_bp)

@@ -145,9 +145,18 @@ gcloud run deploy "${SERVICE_NAME}" \
 
 SERVICE_URL="$(gcloud run services describe "${SERVICE_NAME}" --region "${REGION}" --format='value(status.url)')"
 
+# In cloud mode, serve publishable slides from the service itself.
+# This avoids stale local/ngrok values breaking LIVE publishes.
+gcloud run services update "${SERVICE_NAME}" \
+  --region "${REGION}" \
+  --update-env-vars "PUBLIC_IMAGE_BASE_URL=${SERVICE_URL}" \
+  --quiet >/dev/null
+upsert_env PUBLIC_IMAGE_BASE_URL "${SERVICE_URL}"
+
 echo
 echo "Deploy completado."
 echo "URL: ${SERVICE_URL}"
 echo "Token dashboard (guárdalo): ${token}"
+echo "PUBLIC_IMAGE_BASE_URL fijado a: ${SERVICE_URL}"
 echo
 echo "Siguiente paso: scripts/cloud/setup_scheduler.sh"

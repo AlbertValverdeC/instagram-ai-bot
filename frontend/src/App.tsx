@@ -263,7 +263,7 @@ export default function App() {
   const tokenConfigured = !!apiToken.trim();
 
   return (
-    <div className="min-h-screen bg-bg text-text">
+    <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-background-dark font-display text-slate-100">
       <Header
         status={statusState.status}
         tokenConfigured={tokenConfigured}
@@ -276,7 +276,7 @@ export default function App() {
         onOpenKeys={() => setKeysOpen(true)}
       />
 
-      <main className="mx-auto w-full max-w-[1280px] px-4 py-6 md:px-8">
+      <main className="mx-auto w-full max-w-[1600px] flex-1 space-y-8 p-6 lg:p-10">
         <Controls
           running={running}
           topic={topicInput}
@@ -287,10 +287,16 @@ export default function App() {
           onSearchTopic={searchTopicOnly}
         />
 
-        <section className="mb-5 grid grid-cols-1 gap-5 md:grid-cols-2">
-          <TopicCard topic={dashboardState.topic} />
-          <SlidesPreview slides={dashboardState.slides} cacheBust={slidesCacheBust} onOpen={openLightbox} />
-        </section>
+        {/* Content Grid: Topic+Console left, Slides right */}
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+          <div className="flex flex-col gap-6 lg:col-span-5">
+            <TopicCard topic={dashboardState.topic} />
+            <ConsoleOutput status={statusState.status} elapsed={statusState.elapsed} output={statusState.output} />
+          </div>
+          <div className="lg:col-span-7">
+            <SlidesPreview slides={dashboardState.slides} cacheBust={slidesCacheBust} onOpen={openLightbox} />
+          </div>
+        </div>
 
         <PostsHistory
           posts={posts}
@@ -303,8 +309,6 @@ export default function App() {
           onSync={syncNow}
           onRetry={retryPublish}
         />
-
-        <ConsoleOutput status={statusState.status} elapsed={statusState.elapsed} output={statusState.output} />
       </main>
 
       <Lightbox

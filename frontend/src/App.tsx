@@ -205,7 +205,12 @@ export default function App() {
       const checked = data.checked ?? 0;
       const updated = data.updated ?? 0;
       const failed = data.failed ?? 0;
-      setSyncMessage(`Sync IG completado: revisados ${checked}, actualizados ${updated}, fallidos ${failed}.`);
+      const pendingChecked = data.pending_checked ?? 0;
+      const pendingReconciled = data.pending_reconciled ?? 0;
+      setSyncMessage(
+        `Sync IG completado: revisados ${checked}, actualizados ${updated}, fallidos ${failed}. ` +
+          `Pendientes revisados ${pendingChecked}, reconciliados ${pendingReconciled}.`
+      );
       setSyncColor(failed > 0 ? 'orange' : 'green');
       await loadPosts();
     } catch (error) {
@@ -225,7 +230,12 @@ export default function App() {
       setSyncColor('dim');
       try {
         const data = await apiClient.retryPublish(postId);
-        setSyncMessage(`Reintento OK (#${postId}) → Media ID ${data.media_id || '-'}`);
+        const reconciled = Boolean((data as { reconciled?: boolean }).reconciled);
+        setSyncMessage(
+          reconciled
+            ? `Reconciliado OK (#${postId}) → Media ID ${data.media_id || '-'}`
+            : `Reintento OK (#${postId}) → Media ID ${data.media_id || '-'}`
+        );
         setSyncColor('green');
       } catch (error) {
         setSyncMessage(`Reintento falló (#${postId}): ${errorMessage(error)}`);

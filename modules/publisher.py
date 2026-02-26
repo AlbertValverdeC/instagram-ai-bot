@@ -14,6 +14,7 @@ import json
 import logging
 import random
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
 
@@ -527,19 +528,139 @@ def _wait_container_ready(
         time.sleep(sleep_seconds)
 
 
-def _publish_container(container_id: str) -> str:
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_graph_datetime(value: str | None) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, "%Y-%m-%dT%H:%M:%S%z")
+    except ValueError:
+        return None
+
+
+def _normalize_caption_for_match(text: str | None) -> str:
+    return " ".join(str(text or "").strip().lower().split())
+
+
+def _looks_like_ambiguous_publish_failure(error_text: str) -> bool:
+    low = str(error_text or "").lower()
+    return (
+        "application request limit reached" in low
+        or "code=4" in low
+        or "subcode=2207051" in low
+        or "subcode=2207085" in low
+        or ("fatal" in low and "media_publish" in low)
+    )
+
+
+def _find_recent_published_media_by_caption(
+    *,
+    expected_caption: str,
+    expected_media_type: str = "CAROUSEL_ALBUM",
+    lookback_minutes: int = 180,
+    limit: int = 40,
+) -> dict | None:
+    expected_norm = _normalize_caption_for_match(expected_caption)
+    if not expected_norm:
+        return None
+
+    safe_limit = max(1, min(int(limit or 40), 100))
+    payload = _graph_get(
+        f"{INSTAGRAM_ACCOUNT_ID}/media",
+        params={
+            "fields": "id,caption,permalink,timestamp,media_type,media_product_type",
+            "limit": str(safe_limit),
+            "access_token": META_ACCESS_TOKEN,
+        },
+        timeout=20,
+        retries=1,
+    )
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return None
+
+    now = _utc_now()
+    cutoff = now - timedelta(minutes=max(5, int(lookback_minutes or 180)))
+    wanted_type = str(expected_media_type or "").upper().strip()
+
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+
+        media_type = str(item.get("media_type") or "").upper().strip()
+        if wanted_type and media_type and media_type != wanted_type:
+            continue
+
+        media_product_type = str(item.get("media_product_type") or "").upper().strip()
+        if media_product_type and media_product_type != "FEED":
+            continue
+
+        media_caption_norm = _normalize_caption_for_match(item.get("caption"))
+        if media_caption_norm != expected_norm:
+            continue
+
+        ts = _parse_graph_datetime(item.get("timestamp"))
+        if ts is not None and ts < cutoff:
+            continue
+
+        media_id = str(item.get("id") or "").strip()
+        if not media_id:
+            continue
+        return {
+            "id": media_id,
+            "timestamp": item.get("timestamp"),
+            "permalink": item.get("permalink"),
+        }
+
+    return None
+
+
+def _publish_container(container_id: str, *, expected_caption: str | None = None) -> str:
     """Publish a media container. Returns the published media ID."""
     # Wait for container to be ready.
     _wait_container_ready(container_id, kind="carousel", max_attempts=12, sleep_seconds=5.0)
 
-    payload = _graph_post(
-        f"{INSTAGRAM_ACCOUNT_ID}/media_publish",
-        data={"creation_id": container_id, "access_token": META_ACCESS_TOKEN},
-        retries=8,
-    )
-    media_id = _extract_meta_id(payload, context="media_publish")
-    logger.info(f"Published! Media ID: {media_id}")
-    return media_id
+    try:
+        payload = _graph_post(
+            f"{INSTAGRAM_ACCOUNT_ID}/media_publish",
+            data={"creation_id": container_id, "access_token": META_ACCESS_TOKEN},
+            retries=8,
+        )
+        media_id = _extract_meta_id(payload, context="media_publish")
+        logger.info(f"Published! Media ID: {media_id}")
+        return media_id
+    except Exception as exc:
+        err_text = str(exc)
+        if expected_caption and _looks_like_ambiguous_publish_failure(err_text):
+            try:
+                recovered = _find_recent_published_media_by_caption(
+                    expected_caption=expected_caption,
+                    expected_media_type="CAROUSEL_ALBUM",
+                    lookback_minutes=180,
+                    limit=60,
+                )
+            except Exception as recover_exc:
+                logger.warning(
+                    "Publish fallback lookup failed after media_publish error: %s",
+                    recover_exc,
+                )
+                recovered = None
+
+            if recovered:
+                logger.warning(
+                    "media_publish returned error but matching IG post exists; "
+                    "using recovered media_id=%s (container=%s, permalink=%s, timestamp=%s)",
+                    recovered["id"],
+                    container_id,
+                    recovered.get("permalink") or "-",
+                    recovered.get("timestamp") or "-",
+                )
+                return recovered["id"]
+        raise
 
 
 def publish(image_paths: list[Path], content: dict, strategy: dict) -> str:
@@ -592,7 +713,7 @@ def publish(image_paths: list[Path], content: dict, strategy: dict) -> str:
     # Step 3: Create and publish carousel
     logger.info("Step 3/3: Publishing carousel...")
     container_id = _create_carousel_container(item_ids, full_caption)
-    media_id = _publish_container(container_id)
+    media_id = _publish_container(container_id, expected_caption=full_caption)
 
     return media_id
 

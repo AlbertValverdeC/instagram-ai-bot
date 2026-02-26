@@ -19,6 +19,7 @@ import logging
 import re
 import shutil
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -424,14 +425,36 @@ def daily_pipeline(
             media_id = publish(image_paths, content, strategy)
             logger.info(f"✓ Published! Media ID: {media_id}")
 
-            try:
-                mark_post_published(post_id=post_id, media_id=media_id)
-                logger.info(
-                    "✓ Updated post store (id=%s, status=published_active)",
+            persisted = False
+            for attempt in range(1, 4):
+                try:
+                    mark_post_published(post_id=post_id, media_id=media_id)
+                    logger.info(
+                        "✓ Updated post store (id=%s, status=published_active)",
+                        post_id,
+                    )
+                    persisted = True
+                    break
+                except Exception as e:
+                    logger.warning(
+                        "Could not update post store publication status "
+                        "(attempt %d/3, post_id=%s, media_id=%s): %s",
+                        attempt,
+                        post_id,
+                        media_id,
+                        e,
+                    )
+                    if attempt < 3:
+                        time.sleep(1.0 * attempt)
+
+            if not persisted:
+                logger.error(
+                    "Published on Instagram but DB status update failed "
+                    "(post_id=%s, media_id=%s). "
+                    "A later /api/posts/sync-instagram run should reconcile it automatically.",
                     post_id,
+                    media_id,
                 )
-            except Exception as e:
-                logger.warning(f"Could not update post store publication status: {e}")
 
             # Save to history
             save_to_history(media_id, topic)

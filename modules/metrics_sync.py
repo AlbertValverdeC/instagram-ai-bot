@@ -10,14 +10,17 @@ from __future__ import annotations
 import logging
 import random
 import time
+from datetime import datetime, timedelta, timezone
 
 import requests
 
-from config.settings import GRAPH_API_VERSION, META_ACCESS_TOKEN
+from config.settings import GRAPH_API_VERSION, INSTAGRAM_ACCOUNT_ID, META_ACCESS_TOKEN
 from modules.post_store import (
+    list_pending_posts_for_ig_reconcile,
     list_posts_for_metrics_sync,
     mark_post_ig_active,
     mark_post_ig_deleted,
+    mark_post_published,
     save_metrics_snapshot,
 )
 
@@ -32,6 +35,24 @@ def _normalize_graph_version(raw: str) -> str:
 
 
 GRAPH_API_BASE = f"https://graph.facebook.com/{_normalize_graph_version(GRAPH_API_VERSION)}"
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_graph_datetime(value: str | None) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, "%Y-%m-%dT%H:%M:%S%z")
+    except ValueError:
+        return None
+
+
+def _normalize_caption_for_match(text: str | None) -> str:
+    return " ".join(str(text or "").strip().lower().split())
 
 
 def _meta_error_text(resp: requests.Response) -> str:
@@ -159,6 +180,107 @@ def _graph_get(path: str, params: dict, *, timeout: int = 30, retries: int = 3) 
     raise RuntimeError(f"Meta GET {path} failed after retries")
 
 
+def _get_recent_account_media(limit: int = 50) -> list[dict]:
+    if not INSTAGRAM_ACCOUNT_ID:
+        raise RuntimeError("INSTAGRAM_ACCOUNT_ID no configurado")
+    safe_limit = max(1, min(int(limit or 50), 100))
+    payload = _graph_get(
+        f"{INSTAGRAM_ACCOUNT_ID}/media",
+        {
+            "fields": "id,caption,permalink,timestamp,media_type,media_product_type",
+            "limit": str(safe_limit),
+            "access_token": META_ACCESS_TOKEN,
+        },
+    )
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+
+def _is_media_candidate_for_post(*, post: dict, media: dict, max_age_hours: int) -> bool:
+    expected_caption = _normalize_caption_for_match(post.get("caption"))
+    media_caption = _normalize_caption_for_match(media.get("caption"))
+    if not expected_caption or not media_caption:
+        return False
+    if expected_caption != media_caption:
+        return False
+
+    post_created = post.get("created_at")
+    if isinstance(post_created, datetime):
+        created_at = post_created if post_created.tzinfo else post_created.replace(tzinfo=timezone.utc)
+    else:
+        created_at = None
+    media_ts = _parse_graph_datetime(media.get("timestamp"))
+    now = _utc_now()
+
+    if media_ts is not None:
+        if media_ts < (now - timedelta(hours=max(1, int(max_age_hours)))):
+            return False
+        # Small skew tolerance for clock drift between DB and Graph.
+        if created_at is not None and media_ts < (created_at - timedelta(minutes=20)):
+            return False
+
+    media_product_type = str(media.get("media_product_type") or "").upper()
+    if media_product_type and media_product_type not in {"FEED"}:
+        return False
+
+    return True
+
+
+def reconcile_pending_posts_with_instagram(*, limit: int = 40, max_age_hours: int = 72) -> dict:
+    """
+    Detect already-published IG posts for local rows still marked as generated/error.
+    """
+    if not META_ACCESS_TOKEN:
+        raise RuntimeError("META_ACCESS_TOKEN no configurado")
+    if not INSTAGRAM_ACCOUNT_ID:
+        raise RuntimeError("INSTAGRAM_ACCOUNT_ID no configurado")
+
+    pending_posts = list_pending_posts_for_ig_reconcile(limit=limit, max_age_hours=max_age_hours)
+    if not pending_posts:
+        return {"pending_checked": 0, "pending_reconciled": 0, "pending_errors": []}
+
+    media_rows = _get_recent_account_media(limit=max(40, min(100, len(pending_posts) * 3)))
+    reconciled = 0
+    errors: list[dict] = []
+    used_media_ids: set[str] = set()
+
+    for post in pending_posts:
+        post_id = int(post["id"])
+        match = None
+        for media in media_rows:
+            if _is_media_candidate_for_post(post=post, media=media, max_age_hours=max_age_hours):
+                match = media
+                break
+        if not match:
+            continue
+
+        media_id = str(match.get("id") or "").strip()
+        if not media_id:
+            continue
+        if media_id in used_media_ids:
+            continue
+
+        try:
+            mark_post_published(post_id=post_id, media_id=media_id)
+            used_media_ids.add(media_id)
+            reconciled += 1
+            logger.info(
+                "Reconciled pending post id=%s with IG media_id=%s permalink=%s",
+                post_id,
+                media_id,
+                match.get("permalink") or "-",
+            )
+        except Exception as e:
+            if len(errors) < 20:
+                errors.append({"post_id": post_id, "error": str(e)})
+
+    return {
+        "pending_checked": len(pending_posts),
+        "pending_reconciled": reconciled,
+        "pending_errors": errors,
+    }
+
+
 def _extract_insights(payload: dict) -> dict:
     """
     Normalize Graph insights payload into flat numeric metrics.
@@ -243,9 +365,22 @@ def sync_recent_post_metrics(limit: int = 30) -> dict:
     if not META_ACCESS_TOKEN:
         raise RuntimeError("META_ACCESS_TOKEN no configurado")
 
+    reconcile_result = reconcile_pending_posts_with_instagram(
+        limit=max(30, min(int(limit or 30), 120)),
+        max_age_hours=72,
+    )
+
     posts = list_posts_for_metrics_sync(limit=limit)
     if not posts:
-        return {"checked": 0, "updated": 0, "failed": 0, "errors": []}
+        return {
+            "checked": 0,
+            "updated": 0,
+            "failed": 0,
+            "errors": [],
+            "pending_checked": reconcile_result.get("pending_checked", 0),
+            "pending_reconciled": reconcile_result.get("pending_reconciled", 0),
+            "pending_errors": reconcile_result.get("pending_errors", []),
+        }
 
     checked = 0
     updated = 0
@@ -289,4 +424,7 @@ def sync_recent_post_metrics(limit: int = 30) -> dict:
         "updated": updated,
         "failed": failed,
         "errors": errors,
+        "pending_checked": reconcile_result.get("pending_checked", 0),
+        "pending_reconciled": reconcile_result.get("pending_reconciled", 0),
+        "pending_errors": reconcile_result.get("pending_errors", []),
     }

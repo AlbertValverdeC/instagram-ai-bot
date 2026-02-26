@@ -32,9 +32,13 @@ except Exception:
     db_mark_post_published = None
 
 try:
+    from modules.metrics_sync import (
+        reconcile_pending_posts_with_instagram as db_reconcile_pending_posts,
+    )
     from modules.metrics_sync import sync_recent_post_metrics as db_sync_post_metrics
 except Exception:
     db_sync_post_metrics = None
+    db_reconcile_pending_posts = None
 
 bp = Blueprint("posts_routes", __name__)
 
@@ -100,6 +104,28 @@ def api_posts_retry_publish(post_id: int):
             ),
             400,
         )
+
+    # Safety net: before re-publishing, try to reconcile pending rows that were
+    # actually published on Instagram but DB wasn't updated.
+    if db_reconcile_pending_posts is not None:
+        try:
+            db_reconcile_pending_posts(limit=60, max_age_hours=72)
+            refreshed = db_get_post(post_id)
+            refreshed_status = str((refreshed or {}).get("status") or "").strip()
+            refreshed_media_id = str((refreshed or {}).get("ig_media_id") or "").strip()
+            if refreshed_status == "published_active" and refreshed_media_id:
+                return jsonify(
+                    {
+                        "ok": True,
+                        "post_id": post_id,
+                        "media_id": refreshed_media_id,
+                        "status": "published_active",
+                        "reconciled": True,
+                    }
+                )
+        except Exception:
+            # If reconciliation fails, continue with explicit retry publish.
+            pass
 
     topic = post.get("topic_payload") if isinstance(post.get("topic_payload"), dict) else {"topic": post.get("topic")}
     content = post.get("content_payload")

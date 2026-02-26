@@ -660,6 +660,47 @@ def list_retryable_posts(limit: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def list_pending_posts_for_ig_reconcile(
+    *,
+    limit: int = 40,
+    max_age_hours: int = 72,
+) -> list[dict]:
+    """
+    Return recent posts that are still retryable and missing IG media id.
+
+    These are candidates for reconciliation when Instagram actually published
+    the post but local DB status was not updated.
+    """
+    ensure_schema()
+    safe_limit = max(1, min(int(limit or 40), 200))
+    safe_hours = max(1, min(int(max_age_hours or 72), 24 * 30))
+    cutoff = _utc_now() - timedelta(hours=safe_hours)
+
+    with get_engine().begin() as conn:
+        rows = conn.execute(
+            select(
+                posts_table.c.id,
+                posts_table.c.topic,
+                posts_table.c.caption,
+                posts_table.c.status,
+                posts_table.c.publish_attempts,
+                posts_table.c.created_at,
+                posts_table.c.last_publish_attempt_at,
+            )
+            .where(posts_table.c.status.in_(list(RETRYABLE_STATUSES)))
+            .where(
+                (posts_table.c.ig_media_id.is_(None))
+                | (posts_table.c.ig_media_id == "")
+            )
+            .where(posts_table.c.caption.is_not(None))
+            .where(posts_table.c.caption != "")
+            .where(posts_table.c.created_at >= cutoff)
+            .order_by(posts_table.c.created_at.desc(), posts_table.c.id.desc())
+            .limit(safe_limit)
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+
 def save_published_post(
     media_id: str,
     topic: dict,

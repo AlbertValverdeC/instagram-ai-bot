@@ -677,154 +677,227 @@ def _draw_slide_counter(draw: ImageDraw.Draw, current: int, total: int):
     draw.text((rx + pad_x, ry + pad_y), text, font=font, fill=(255, 255, 255, 230))
 
 
+def _draw_text_centered_wrapped(
+    draw: ImageDraw.Draw,
+    text: str,
+    y: int,
+    max_width: int,
+    font: ImageFont.FreeTypeFont,
+    fill: tuple,
+    line_spacing: float = 1.2,
+) -> int:
+    """Draw CENTER-ALIGNED wrapped text. Returns Y after last line.
+
+    Unlike _draw_text_wrapped (left-aligned), every line is horizontally
+    centered on the canvas. Used for cover titles to guarantee consistent
+    centering regardless of line count.
+    """
+    clean = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+
+    # Pixel-based word wrapping for precision
+    words = clean.split()
+    if not words:
+        return y
+
+    space_w = draw.textbbox((0, 0), " ", font=font)[2]
+    lines: list[str] = []
+    current_line: list[str] = []
+    current_width = 0
+
+    for word in words:
+        word_w = draw.textbbox((0, 0), word, font=font)[2]
+        needed = word_w + (space_w if current_line else 0)
+        if current_line and current_width + needed > max_width:
+            lines.append(" ".join(current_line))
+            current_line = [word]
+            current_width = word_w
+        else:
+            current_line.append(word)
+            current_width += needed
+    if current_line:
+        lines.append(" ".join(current_line))
+
+    _, line_step = _line_metrics(draw, font, line_spacing)
+    shadow_offset = 3
+    shadow_color = (0, 0, 0, 200)
+    current_y = y
+
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        line_w = bbox[2] - bbox[0]
+        x = (SLIDE_WIDTH - line_w) // 2
+        # Shadow pass
+        draw.text((x + shadow_offset, current_y + shadow_offset), line, font=font, fill=shadow_color)
+        # Color pass
+        draw.text((x, current_y), line, font=font, fill=fill)
+        current_y += line_step
+
+    return current_y
+
+
 def _create_cover_slide(
     slide: dict, template: dict, total_slides: int, ai_background: Image.Image | None = None
 ) -> Image.Image:
-    """Create the cover slide with 60/40 layout inspired by top tech IG accounts.
+    """Create the cover slide with fixed-anchor layout.
 
-    Layout:
-    - Top 60%: AI-generated contextual image (or gradient fallback)
-    - Transition: dark gradient overlay fading from transparent to dark
-    - Profile picture: small circle centered at transition zone
-    - Bottom 40%: title tag (accent) + headline with bicolor highlight + CTA
+    Design principles (consistency across all posts):
+    - Title ALWAYS centered, ALWAYS same font size (88pt), wraps centered
+    - Subtitle ALWAYS at a fixed gap below title, ALWAYS same font size (44pt)
+    - Text block ALWAYS anchored at 58% height — never moves up or down
+    - CTA ALWAYS at 94.5% height
+    - If text overflows: truncate subtitle words, never shrink fonts or move anchors
     """
     img = Image.new("RGBA", (SLIDE_WIDTH, SLIDE_HEIGHT))
     draw = ImageDraw.Draw(img)
 
-    # Zone boundaries
-    image_zone_end = int(SLIDE_HEIGHT * 0.55)   # image fills top 55%
-    text_zone_start = int(SLIDE_HEIGHT * 0.52)   # text zone begins (with overlap for gradient)
-
+    # ── Background ──────────────────────────────────────────────────────────
     if ai_background is not None:
-        # Place AI image in top zone
         img.paste(ai_background, (0, 0))
         logger.info("Cover slide using AI-generated background")
     else:
-        # Fallback: full gradient
         bg = template["background"]
         _draw_gradient(draw, SLIDE_WIDTH, SLIDE_HEIGHT, bg["color_top"], bg["color_bottom"])
 
-    # Dark gradient overlay — must guarantee text legibility
-    # Zone 0-35%: light vignette only (image visible)
-    # Zone 35-50%: rapid transition to near-opaque (image fades out)
-    # Zone 50-100%: solid dark (text zone, fully legible)
+    # Dark gradient overlay for text legibility
     overlay = Image.new("RGBA", (SLIDE_WIDTH, SLIDE_HEIGHT), (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     transition_start = int(SLIDE_HEIGHT * 0.32)
     solid_start = int(SLIDE_HEIGHT * 0.50)
     for y in range(SLIDE_HEIGHT):
         if y < transition_start:
-            # Top zone: very subtle darkening for vignette feel
             alpha = int(y / transition_start * 30)
         elif y < solid_start:
-            # Transition zone: rapid fade from 30 to 245
             progress = (y - transition_start) / (solid_start - transition_start)
             alpha = int(30 + progress * progress * 215)
         else:
-            # Text zone: near-opaque black
             alpha = 245
         overlay_draw.line([(0, y), (SLIDE_WIDTH, y)], fill=(5, 8, 18, alpha))
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
 
-    # Profile picture at the transition zone
-    profile_y = int(SLIDE_HEIGHT * 0.50)
-    _draw_profile_circle(img, profile_y)
-    draw = ImageDraw.Draw(img)  # refresh after paste
+    # ── Profile picture at transition zone ──────────────────────────────────
+    _draw_profile_circle(img, int(SLIDE_HEIGHT * 0.50))
+    draw = ImageDraw.Draw(img)
 
-    # Slide counter (1/N) in top-right
+    # ── Chrome: counter + logo ──────────────────────────────────────────────
     _draw_slide_counter(draw, 1, total_slides)
     _draw_brand_logo_badge(img, draw, template)
 
+    # ── Fixed layout constants ──────────────────────────────────────────────
     px = LAYOUT["padding_x"]
-    max_w = SLIDE_WIDTH - 2 * px
+    max_w = SLIDE_WIDTH - 2 * px  # 920px
 
-    # === Cover text layout with protected CTA zone ===
+    PREFERRED_TITLE_SIZE = FONT_SIZES["cover_title"]  # 88pt preferred
+    MIN_TITLE_SIZE = 62                                # absolute minimum
+    TITLE_SIZE_STEP = 4                                # decrease in steps
+    SUBTITLE_SIZE = 44                                 # fixed — never changes
+    TITLE_GAP = 20                                     # gap between title bottom and subtitle top
+    BLOCK_Y = int(SLIDE_HEIGHT * 0.58)                 # fixed anchor — never moves
+    CTA_Y = int(SLIDE_HEIGHT * 0.945)                  # fixed CTA position
+    # Reserve space for subtitle (1 line) + gap + margin above CTA
+    SUBTITLE_RESERVE = SUBTITLE_SIZE + TITLE_GAP + 40
+
     title_text = slide.get("title", "").upper()
     subtitle_text = (slide.get("subtitle", "") or "").upper()
 
+    # ── Title: find the largest font size that fits above the CTA zone ─────
+    # The title must end above (CTA_Y - SUBTITLE_RESERVE) so that the
+    # subtitle and CTA still have room.
+    title_max_bottom = CTA_Y - SUBTITLE_RESERVE
+
+    title_size = PREFERRED_TITLE_SIZE
+    title_font = _get_font(title_size, bold=True)
+
+    # Dry-run: estimate title height without drawing
+    def _estimate_title_bottom(font_size: int) -> int:
+        """Return estimated Y after drawing title at given font size."""
+        f = _get_font(font_size, bold=True)
+        _, step = _line_metrics(draw, f, 1.15)
+        clean = re.sub(r'\*\*(.+?)\*\*', r'\1', title_text)
+        words = clean.split()
+        if not words:
+            return BLOCK_Y
+        space_w = draw.textbbox((0, 0), " ", font=f)[2]
+        n_lines = 1
+        cur_w = 0
+        for word in words:
+            ww = draw.textbbox((0, 0), word, font=f)[2]
+            needed = ww + (space_w if cur_w > 0 else 0)
+            if cur_w > 0 and cur_w + needed > max_w:
+                n_lines += 1
+                cur_w = ww
+            else:
+                cur_w += needed
+        return BLOCK_Y + n_lines * step
+
+    # Shrink title font only when absolutely necessary
+    while title_size > MIN_TITLE_SIZE:
+        if _estimate_title_bottom(title_size) <= title_max_bottom:
+            break
+        title_size -= TITLE_SIZE_STEP
+
+    # If still overflows at min size, we'll truncate the title
+    if _estimate_title_bottom(title_size) > title_max_bottom:
+        # Truncate title text to fit at MIN_TITLE_SIZE
+        words = re.sub(r'\*\*(.+?)\*\*', r'\1', title_text).split()
+        lo, hi = 1, len(words)
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            test_text = " ".join(words[:mid]) + "..."
+            title_text_bak = title_text
+            title_text = test_text
+            if _estimate_title_bottom(title_size) <= title_max_bottom:
+                lo = mid
+            else:
+                hi = mid - 1
+            title_text = title_text_bak
+        title_text = " ".join(words[:lo]) + "..."
+
+    title_font = _get_font(title_size, bold=True)
+    title_end_y = _draw_text_centered_wrapped(
+        draw, title_text, BLOCK_Y, max_w,
+        title_font, template["accent_color"], line_spacing=1.15,
+    )
+
+    # ── Subtitle: always centered, always 44pt, fixed gap below title ───────
+    if subtitle_text:
+        subtitle_font = _get_font(SUBTITLE_SIZE, bold=True)
+        subtitle_y = title_end_y + TITLE_GAP
+
+        # Safety: if subtitle would collide with CTA, truncate it
+        _, sub_step = _line_metrics(draw, subtitle_font, 1.20)
+        max_subtitle_lines = max(1, (CTA_Y - 30 - subtitle_y) // sub_step)
+
+        # Estimate how many lines the subtitle needs
+        sub_lines_needed = _estimate_bicolor_line_count(draw, subtitle_text, max_w, subtitle_font)
+
+        if sub_lines_needed > max_subtitle_lines:
+            # Truncate subtitle text to fit available lines
+            words = re.sub(r'\*\*(.+?)\*\*', r'\1', subtitle_text).split()
+            # Binary search for max words that fit
+            lo, hi = 1, len(words)
+            while lo < hi:
+                mid = (lo + hi + 1) // 2
+                test_text = " ".join(words[:mid]) + "..."
+                if _estimate_bicolor_line_count(draw, test_text, max_w, subtitle_font) <= max_subtitle_lines:
+                    lo = mid
+                else:
+                    hi = mid - 1
+            subtitle_text = " ".join(words[:lo]) + "..."
+
+        _draw_bicolor_text_centered(
+            draw, subtitle_text, subtitle_y, max_w,
+            subtitle_font, template["title_color"], template["accent_color"],
+            line_spacing=1.20,
+        )
+
+    # ── CTA: always at fixed Y, always centered ────────────────────────────
     cta_font = _get_font(20, bold=True)
     cta_text = "-DESLIZA PARA CONOCER TODOS LOS DETALLES-"
     cta_bbox = draw.textbbox((0, 0), cta_text, font=cta_font)
-    cta_h = cta_bbox[3] - cta_bbox[1]
-    cta_y = int(SLIDE_HEIGHT * 0.945)
-    # Keep a safe margin above CTA so long headlines never collide with it.
-    cta_safe_top = cta_y - 24
-
-    title_size = FONT_SIZES["cover_title"]
-    subtitle_size = 52 if subtitle_text else 0
-    title_min = 58
-    subtitle_min = 36
-    block_start_y = int(SLIDE_HEIGHT * 0.56)
-
-    def _estimate_cover_block_height(t_size: int, s_size: int) -> int:
-        title_font_local = _get_font(t_size, bold=True)
-        title_lines = _estimate_wrapped_line_count(draw, title_text, max_w, title_font_local)
-        _, title_step = _line_metrics(draw, title_font_local, 1.2)
-        total_h = max(1, title_lines) * title_step
-
-        if subtitle_text and s_size > 0:
-            subtitle_font_local = _get_font(s_size, bold=True)
-            subtitle_lines = _estimate_bicolor_line_count(draw, subtitle_text, max_w, subtitle_font_local)
-            _, subtitle_step = _line_metrics(draw, subtitle_font_local, 1.20)
-            total_h += 18 + (max(1, subtitle_lines) * subtitle_step)
-        return total_h
-
-    available_h = cta_safe_top - block_start_y
-    estimated_h = _estimate_cover_block_height(title_size, subtitle_size)
-    while estimated_h > available_h and (subtitle_size > subtitle_min or title_size > title_min):
-        if subtitle_text and subtitle_size > subtitle_min:
-            subtitle_size -= 2
-        elif title_size > title_min:
-            title_size -= 2
-        estimated_h = _estimate_cover_block_height(title_size, subtitle_size)
-
-    if estimated_h > available_h:
-        block_start_y = max(int(SLIDE_HEIGHT * 0.46), cta_safe_top - estimated_h)
-
-    # Center the title tag
-    title_font = _get_font(title_size, bold=True)
-    title_y = block_start_y
-    title_bbox = draw.textbbox((0, 0), title_text, font=title_font)
-    title_w = title_bbox[2] - title_bbox[0]
-
-    # Draw title with shadow for legibility
-    shadow_color = (0, 0, 0, 200)
-    if title_w > max_w:
-        # Shadow
-        _draw_text_wrapped(
-            draw, title_text,
-            (SLIDE_WIDTH - max_w) // 2 + 3, title_y + 3, max_w,
-            title_font, shadow_color, line_spacing=1.2,
-        )
-        title_y = _draw_text_wrapped(
-            draw, title_text,
-            (SLIDE_WIDTH - max_w) // 2, title_y, max_w,
-            title_font, template["accent_color"], line_spacing=1.2,
-        )
-    else:
-        title_x = (SLIDE_WIDTH - title_w) // 2
-        draw.text((title_x + 3, title_y + 3), title_text, font=title_font, fill=shadow_color)
-        draw.text((title_x, title_y), title_text, font=title_font, fill=template["accent_color"])
-        title_y += title_bbox[3] - title_bbox[1] + 10
-
-    # === SUBTITLE / HEADLINE (bicolor: white + accent highlights, centered) ===
-    if subtitle_text:
-        subtitle_font = _get_font(subtitle_size, bold=True)
-        subtitle_y = title_y + 18
-
-        end_y = _draw_bicolor_text_centered(
-            draw, subtitle_text, subtitle_y, max_w,
-            subtitle_font, template["title_color"], template["accent_color"], line_spacing=1.20,
-        )
-    else:
-        end_y = title_y
-
-    # === CTA: "DESLIZA PARA CONOCER TODOS LOS DETALLES" ===
-    cta_y = min(cta_y, SLIDE_HEIGHT - cta_h - 18)
     cta_w = cta_bbox[2] - cta_bbox[0]
     cta_x = (SLIDE_WIDTH - cta_w) // 2
-    draw.text((cta_x, cta_y), cta_text, font=cta_font, fill=template["accent_color"])
+    draw.text((cta_x, CTA_Y), cta_text, font=cta_font, fill=template["accent_color"])
 
     return img
 

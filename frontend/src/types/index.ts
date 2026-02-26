@@ -121,6 +121,8 @@ export interface SyncMetricsResponse {
   checked?: number;
   updated?: number;
   failed?: number;
+  pending_checked?: number;
+  pending_reconciled?: number;
   auto_interval_minutes?: number;
   [key: string]: unknown;
 }

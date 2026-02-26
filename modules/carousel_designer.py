@@ -1088,9 +1088,24 @@ def create(content: dict, template_index: int | None = None, topic: dict | None 
     if template_index is not None:
         template = TEMPLATES[template_index % len(TEMPLATES)]
     else:
-        # Use a simple rotation based on how many files are in output
-        existing = list(OUTPUT_DIR.glob("*.png"))
-        template = TEMPLATES[len(existing) % len(TEMPLATES)]
+        # Rotate based on last published post's template (DB history)
+        try:
+            from modules.post_store import get_last_used_template_name
+            last_name = get_last_used_template_name()
+            if last_name:
+                names = [t["name"] for t in TEMPLATES]
+                try:
+                    last_idx = names.index(last_name)
+                    template = TEMPLATES[(last_idx + 1) % len(TEMPLATES)]
+                except ValueError:
+                    template = TEMPLATES[0]
+            else:
+                template = TEMPLATES[0]
+        except Exception:
+            template = TEMPLATES[0]
+
+    # Store chosen template name in content dict for DB persistence / rotation
+    content["template_name"] = template["name"]
 
     logger.info(f"Using template: {template['name']} for {total} slides")
 

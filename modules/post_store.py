@@ -1304,6 +1304,26 @@ def mark_queue_item_error(item_id: int, message: str | None = None) -> None:
         )
 
 
+def get_last_used_template_name() -> str | None:
+    """Return the template name from the most recent post's content_payload."""
+    ensure_schema()
+    with get_engine().begin() as conn:
+        row = conn.execute(
+            select(posts_table.c.content_payload)
+            .where(posts_table.c.content_payload.is_not(None))
+            .order_by(posts_table.c.created_at.desc(), posts_table.c.id.desc())
+            .limit(1)
+        ).mappings().first()
+    if not row:
+        return None
+    payload = row["content_payload"]
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    if isinstance(payload, dict):
+        return payload.get("template_name")
+    return None
+
+
 def recover_stale_processing(max_age_hours: int = 2) -> int:
     ensure_schema()
     cutoff = _utc_now() - timedelta(hours=max_age_hours)

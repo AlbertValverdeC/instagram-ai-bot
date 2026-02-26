@@ -416,7 +416,7 @@ def daily_pipeline(
         logger.info("\n🎨 STEP 3: Design — Creating carousel images...")
         from modules.carousel_designer import create
         image_paths = create(content, template_index=template_idx, topic=topic)
-        logger.info(f"✓ Created {len(image_paths)} slide images")
+        logger.info(f"✓ Created {len(image_paths)} slide images (template: {content.get('template_name', '?')})")
         for p in image_paths:
             logger.info(f"  → {p}")
 

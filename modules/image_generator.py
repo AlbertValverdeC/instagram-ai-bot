@@ -1,9 +1,9 @@
 """
-Image generator module: creates AI-generated backgrounds with Google GenAI models.
+Image generator module: creates AI-generated backgrounds with Google GenAI models or xAI Grok.
 
-Supports both:
-  - Imagen models via `generate_images`
-  - Gemini image models (aka "Nano Banana" family) via `generate_content`
+Supports providers controlled by IMAGE_PROVIDER env var:
+- "google" (default): Imagen / Gemini image models via Google GenAI
+- "xai": xAI Grok via OpenAI-compatible API
 
 Returns None on failure so callers can fall back to local gradient backgrounds.
 """
@@ -13,12 +13,21 @@ import io
 import logging
 import re
 
-from config.settings import GOOGLE_AI_API_KEY, GOOGLE_IMAGE_MODEL, SLIDE_HEIGHT, SLIDE_WIDTH
+from config.settings import (
+    GOOGLE_AI_API_KEY,
+    GOOGLE_IMAGE_MODEL,
+    IMAGE_PROVIDER,
+    SLIDE_HEIGHT,
+    SLIDE_WIDTH,
+    XAI_API_KEY,
+    XAI_IMAGE_MODEL,
+)
 from modules.prompt_loader import load_prompt
 
 logger = logging.getLogger(__name__)
 
 _client = None
+_xai_client = None
 
 # Generic fallback prompt when the Director's prompt gets filtered (editable via dashboard)
 _DEFAULT_IMAGE_FALLBACK = (
@@ -106,6 +115,10 @@ def _compose_content_prompt(topic: str, key_points: list[str]) -> str:
         "Evita metáforas abstractas y escenas complejas. Sin texto, sin letras, sin logos."
     )
 
+
+# ---------------------------------------------------------------------------
+# Google GenAI provider (Imagen + Gemini)
+# ---------------------------------------------------------------------------
 
 def _get_client():
     """Lazy-initialize the Google GenAI client."""
@@ -243,13 +256,92 @@ def _generate_with_model_fallbacks(client, prompt: str, aspect_ratio: str):
     return None
 
 
+# ---------------------------------------------------------------------------
+# xAI Grok provider
+# ---------------------------------------------------------------------------
+
+def _get_xai_client():
+    """Lazy-initialize the xAI client (OpenAI-compatible)."""
+    global _xai_client
+    if _xai_client is not None:
+        return _xai_client
+
+    if not XAI_API_KEY:
+        logger.info("XAI_API_KEY not set, xAI image generation disabled")
+        return None
+
+    try:
+        from openai import OpenAI
+
+        _xai_client = OpenAI(base_url="https://api.x.ai/v1", api_key=XAI_API_KEY)
+        return _xai_client
+    except ImportError:
+        logger.warning("openai package not installed, xAI image generation disabled")
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to initialize xAI client: {e}")
+        return None
+
+
+def _generate_with_xai(prompt: str):
+    """Call xAI Grok image API and return PIL Image or None."""
+    client = _get_xai_client()
+    if client is None:
+        return None
+
+    response = client.images.generate(
+        model=XAI_IMAGE_MODEL,
+        prompt=prompt,
+        n=1,
+        response_format="b64_json",
+    )
+
+    if not response.data:
+        return None
+
+    image_bytes = base64.b64decode(response.data[0].b64_json)
+    return _image_from_bytes(image_bytes)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def generate_cover_background(prompt: str, topic_hint: str | None = None, aspect_ratio: str = "3:4"):
     """
     Generate an AI background image for the cover.
 
+    Routes to xAI Grok or Google GenAI based on IMAGE_PROVIDER.
     Tries the Director prompt first, then retries with a safe fallback prompt.
     Returns PIL.Image.Image or None.
     """
+    fallback = load_prompt("image_fallback", _DEFAULT_IMAGE_FALLBACK)
+
+    # --- xAI Grok provider ---
+    if IMAGE_PROVIDER == "xai":
+        try:
+            logger.info(f"Generating AI cover background with xAI ({XAI_IMAGE_MODEL})...")
+            logger.info(f"Image prompt: {prompt[:150]}...")
+
+            img = _generate_with_xai(prompt)
+            if img is not None:
+                logger.info(f"xAI cover background generated ({SLIDE_WIDTH}x{SLIDE_HEIGHT})")
+                return img
+
+            logger.warning("xAI returned no images. Retrying with fallback prompt...")
+            img = _generate_with_xai(fallback)
+            if img is not None:
+                logger.info(f"xAI cover background generated with fallback ({SLIDE_WIDTH}x{SLIDE_HEIGHT})")
+                return img
+
+            logger.warning("xAI fallback also returned no images")
+            return None
+
+        except Exception as e:
+            logger.warning(f"xAI image generation failed: {e}")
+            return None
+
+    # --- Google GenAI provider (default) ---
     client = _get_client()
     if client is None:
         return None
@@ -265,7 +357,6 @@ def generate_cover_background(prompt: str, topic_hint: str | None = None, aspect
             return img
 
         logger.warning("No image returned for director prompt. Retrying with fallback prompt...")
-        fallback = load_prompt("image_fallback", _DEFAULT_IMAGE_FALLBACK)
         fallback_prompt = _compose_cover_prompt(fallback, topic_hint)
         img = _generate_with_model_fallbacks(client, fallback_prompt, aspect_ratio)
         if img is not None:
@@ -287,10 +378,6 @@ def generate_content_background(topic_en: str | dict, aspect_ratio: str = "3:4")
     Style is consistently hand-drawn editorial illustration with thematic relevance.
     Returns PIL.Image.Image or None.
     """
-    client = _get_client()
-    if client is None:
-        return None
-
     if isinstance(topic_en, dict):
         topic_label = topic_en.get("topic_en", topic_en.get("topic", "technology"))
         key_points = [str(x) for x in topic_en.get("key_points", []) if str(x).strip()]
@@ -299,6 +386,33 @@ def generate_content_background(topic_en: str | dict, aspect_ratio: str = "3:4")
         key_points = []
 
     prompt = _compose_content_prompt(topic_label, key_points)
+
+    # --- xAI Grok provider ---
+    if IMAGE_PROVIDER == "xai":
+        try:
+            logger.info("Generating AI content background with xAI...")
+            img = _generate_with_xai(prompt)
+            if img is not None:
+                logger.info(f"xAI content background generated ({SLIDE_WIDTH}x{SLIDE_HEIGHT})")
+                return img
+
+            logger.warning("xAI content background filtered. Trying fallback...")
+            fallback_prompt = _compose_content_prompt(topic_label, [])
+            img = _generate_with_xai(fallback_prompt)
+            if img is not None:
+                logger.info("xAI content background generated with fallback")
+                return img
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"xAI content background generation failed: {e}")
+            return None
+
+    # --- Google GenAI provider (default) ---
+    client = _get_client()
+    if client is None:
+        return None
 
     try:
         logger.info("Generating AI content background...")

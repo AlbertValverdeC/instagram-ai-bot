@@ -50,9 +50,16 @@ CONTENT_USE_DIRECTOR = os.getenv("CONTENT_USE_DIRECTOR", "false").strip().lower(
     "1", "true", "yes", "on",
 }
 
+# --- Image Provider ---
+IMAGE_PROVIDER = os.getenv("IMAGE_PROVIDER", "google")  # "google" or "xai"
+
 # --- Google AI (Imagen) ---
 GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY", "")
 GOOGLE_IMAGE_MODEL = os.getenv("GOOGLE_IMAGE_MODEL", "gemini-2.5-flash-image")
+
+# --- xAI (Grok) ---
+XAI_API_KEY = os.getenv("XAI_API_KEY", "")
+XAI_IMAGE_MODEL = os.getenv("XAI_IMAGE_MODEL", "grok-imagine-image")
 
 # --- Research ---
 RESEARCH_CONFIG_FILE = DATA_DIR / "research_config.json"

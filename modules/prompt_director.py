@@ -14,7 +14,7 @@ from datetime import datetime
 
 from openai import OpenAI
 
-from config.settings import DIRECTOR_MODEL, OPENAI_API_KEY
+from config.settings import DIRECTOR_MODEL, IMAGE_PROVIDER, OPENAI_API_KEY
 from modules.prompt_loader import load_prompt
 
 logger = logging.getLogger(__name__)
@@ -141,6 +141,43 @@ REGLAS DE SEGURIDAD (OBLIGATORIAS):
 
 Escribe un prompt corto (2-3 frases, máximo 100 palabras).
 Escribe SOLO el prompt de generación de imagen. Sin explicación."""
+
+_XAI_IMAGE_META = """You are a Prompt Engineer for AI image generation, specializing in
+viral Instagram cover images for a tech news account.
+
+The image will be used as the TOP 50% of a carousel cover slide. Text goes on the bottom half.
+
+TOPIC: {topic_en}
+
+YOUR TASK:
+Create a prompt that generates an image DIRECTLY RELATED to this specific topic.
+Make the image IMMEDIATELY recognizable as related to "{topic_en}".
+
+CELEBRITY / PERSON RULES:
+- If the topic is about a specific person (CEO, founder, politician, celebrity),
+  INCLUDE THEM BY NAME in the prompt (e.g. "Elon Musk", "Sam Altman", "Tim Cook").
+  Show them in a dramatic, cinematic portrait style.
+- If no specific person is involved, use compelling visual metaphors instead.
+
+BRAND / LOGO RULES:
+- If the topic is about a specific company or product, INCLUDE the brand name or logo
+  in the prompt (e.g. "Apple logo", "Tesla Model Y", "OpenAI logo").
+- Show the product or branding prominently.
+
+VISUAL METAPHOR examples (when no person/brand applies):
+- Topic about gaming → gaming setup, controller, gaming room with screens
+- Topic about AI → futuristic robot, neural network visualization
+- Topic about a hack/security → hooded figure, glitch effects, broken screen
+- Topic about space/science → astronaut, planet, lab with equipment
+
+STYLE:
+- Dramatic cinematic lighting, dark moody tones with neon/teal accents
+- Photorealistic quality, shallow depth of field
+- Subject in upper half of frame, bottom can be dark/empty (text goes there)
+- NO text, letters, numbers, or words in the image
+
+Write a short prompt (2-3 sentences, max 100 words).
+Write ONLY the image generation prompt. No explanation."""
 
 
 class PromptDirector:
@@ -305,12 +342,20 @@ class PromptDirector:
             color_top = bg.get("color_top", (10, 15, 40))
             color_bottom = bg.get("color_bottom", (25, 55, 109))
 
+            # Pick meta-prompt based on provider: xAI allows celebrities & logos
+            if IMAGE_PROVIDER == "xai":
+                default_meta = _XAI_IMAGE_META
+                prompt_id = "image_meta_xai"
+            else:
+                default_meta = _DEFAULT_IMAGE_META
+                prompt_id = "image_meta"
+
             try:
-                tmpl = load_prompt("image_meta", _DEFAULT_IMAGE_META)
+                tmpl = load_prompt(prompt_id, default_meta)
                 meta_prompt = tmpl.format(topic_en=topic_en)
             except (KeyError, IndexError) as e:
-                logger.warning(f"Custom image_meta prompt error: {e}. Using default.")
-                meta_prompt = _DEFAULT_IMAGE_META.format(topic_en=topic_en)
+                logger.warning(f"Custom {prompt_id} prompt error: {e}. Using default.")
+                meta_prompt = default_meta.format(topic_en=topic_en)
 
             response = self.client.chat.completions.create(
                 model=DIRECTOR_MODEL,

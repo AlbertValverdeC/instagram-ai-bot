@@ -42,6 +42,9 @@ TIMEZONE = os.getenv("TIMEZONE", "Europe/Madrid")
 OPENAI_MODEL = "gpt-4o-mini"
 OPENAI_MAX_TOKENS = 2000
 DIRECTOR_MODEL = os.getenv("DIRECTOR_MODEL", "gpt-4o")
+CONTENT_USE_DIRECTOR = os.getenv("CONTENT_USE_DIRECTOR", "false").strip().lower() in {
+    "1", "true", "yes", "on",
+}
 
 # --- Google AI (Imagen) ---
 GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY", "")

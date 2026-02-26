@@ -20,6 +20,22 @@ from modules.prompt_loader import load_prompt
 logger = logging.getLogger(__name__)
 
 
+def _is_viable_content_prompt(prompt_text: str) -> bool:
+    """
+    Lightweight guardrail to avoid returning weak content prompts.
+    """
+    text = str(prompt_text or "").strip()
+    if len(text) < 300:
+        return False
+    low = text.lower()
+    required = ("json", "slides", "caption", "alt_text", "hashtag_suggestions")
+    if any(token not in low for token in required):
+        return False
+    if "8 slides" not in low and "exactamente 8" not in low:
+        return False
+    return True
+
+
 # ── Default meta-prompts (editable via dashboard) ────────────────────────────
 
 _DEFAULT_RESEARCH_META = """Eres un/a Prompt Engineer. Tu trabajo es escribir el MEJOR prompt posible
@@ -256,11 +272,14 @@ class PromptDirector:
             response = self.client.chat.completions.create(
                 model=DIRECTOR_MODEL,
                 messages=[{"role": "user", "content": meta_prompt}],
-                temperature=0.7,
+                temperature=0.4,
                 max_tokens=1500,
             )
 
             crafted = response.choices[0].message.content.strip()
+            if not _is_viable_content_prompt(crafted):
+                logger.warning("Director content prompt failed viability checks")
+                return None
             logger.info(f"Director crafted content prompt ({len(crafted)} chars)")
             return crafted
 

@@ -16,6 +16,7 @@ import re
 from openai import OpenAI
 
 from config.settings import (
+    CONTENT_USE_DIRECTOR,
     NUM_CONTENT_SLIDES,
     OPENAI_API_KEY,
     OPENAI_MODEL,
@@ -403,6 +404,58 @@ def _has_missing_slide_text(content: dict) -> bool:
     return False
 
 
+def _build_content_fallback_prompt(
+    topic_text: str,
+    key_points_text: str,
+    context_text: str,
+    total_slides: int,
+    num_content_slides: int,
+) -> str:
+    """Build deterministic fallback prompt from dashboard template or default."""
+    try:
+        template = load_prompt("content_fallback", _DEFAULT_CONTENT_FALLBACK)
+        return template.format(
+            topic=topic_text,
+            key_points=key_points_text,
+            context=context_text,
+            total_slides=total_slides,
+            num_content_slides=num_content_slides,
+        )
+    except (KeyError, IndexError) as e:
+        logger.warning(f"Custom content_fallback prompt error: {e}. Using default.")
+        return _DEFAULT_CONTENT_FALLBACK.format(
+            topic=topic_text,
+            key_points=key_points_text,
+            context=context_text,
+            total_slides=total_slides,
+            num_content_slides=num_content_slides,
+        )
+
+
+def _is_viable_director_content_prompt(prompt_text: str) -> bool:
+    """
+    Basic prompt sanity-check to avoid burning a full generation call on weak prompts.
+    """
+    text = str(prompt_text or "").strip()
+    if not text:
+        return False
+    if len(text) < 300:
+        return False
+    low = text.lower()
+    required_tokens = (
+        "json",
+        "slides",
+        "caption",
+        "alt_text",
+        "hashtag_suggestions",
+    )
+    if any(token not in low for token in required_tokens):
+        return False
+    if "8 slides" not in low and "exactamente 8" not in low:
+        return False
+    return True
+
+
 def _normalize_content(content: dict, topic: dict) -> dict:
     """
     Normalize content to avoid blank slides.
@@ -644,64 +697,66 @@ def generate(topic: dict) -> dict:
     key_points_text = json.dumps(topic['key_points'], ensure_ascii=False)
     context_text = topic.get('why', '')
 
-    # Try Prompt Director for an optimized prompt
+    # Build stable fallback prompt first; this remains the default path.
+    fallback_prompt = _build_content_fallback_prompt(
+        topic_text=topic_text,
+        key_points_text=key_points_text,
+        context_text=context_text,
+        total_slides=total_slides,
+        num_content_slides=num_content_slides,
+    )
+
+    # Optionally try Prompt Director for an optimized prompt.
     director_prompt = None
-    try:
-        from modules.prompt_director import PromptDirector
-        director = PromptDirector()
-        director_prompt = director.craft_content_prompt(topic)
-    except Exception as e:
-        logger.warning(f"Could not use Prompt Director for content: {e}")
-
-    if director_prompt:
-        prompt = director_prompt
-        logger.info("Using director-crafted content prompt")
-    else:
-        logger.info("Using default content prompt")
+    if CONTENT_USE_DIRECTOR:
         try:
-            template = load_prompt("content_fallback", _DEFAULT_CONTENT_FALLBACK)
-            prompt = template.format(
-                topic=topic_text,
-                key_points=key_points_text,
-                context=context_text,
-                total_slides=total_slides,
-                num_content_slides=num_content_slides,
-            )
-        except (KeyError, IndexError) as e:
-            logger.warning(f"Custom content_fallback prompt error: {e}. Using default.")
-            prompt = _DEFAULT_CONTENT_FALLBACK.format(
-                topic=topic_text,
-                key_points=key_points_text,
-                context=context_text,
-                total_slides=total_slides,
-                num_content_slides=num_content_slides,
-            )
+            from modules.prompt_director import PromptDirector
+            director = PromptDirector()
+            candidate = director.craft_content_prompt(topic)
+            if _is_viable_director_content_prompt(candidate):
+                director_prompt = candidate
+                logger.info("Using director-crafted content prompt")
+            else:
+                logger.warning("Director content prompt rejected by sanity-check. Using fallback prompt.")
+        except Exception as e:
+            logger.warning(f"Could not use Prompt Director for content: {e}")
+    else:
+        logger.info("Content director disabled (CONTENT_USE_DIRECTOR=false). Using fallback prompt.")
 
-    def _call_openai(p):
+    prompt = director_prompt or fallback_prompt
+
+    def _call_openai(p, *, temperature: float = 0.45):
         # OpenAI requires the word "json" in messages when using json_object format
         if "json" not in p.lower():
             p += "\n\nRespond in valid JSON format."
-        resp = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[{"role": "user", "content": p}],
-            temperature=0.8,
-            response_format={"type": "json_object"},
-        )
-        return json.loads(resp.choices[0].message.content)
+        # Two-attempt decode to reduce transient malformed JSON responses.
+        temps = [temperature, 0.2]
+        last_err = None
+        for idx, temp in enumerate(temps, start=1):
+            try:
+                resp = client.chat.completions.create(
+                    model=OPENAI_MODEL,
+                    messages=[{"role": "user", "content": p}],
+                    temperature=temp,
+                    response_format={"type": "json_object"},
+                )
+                return json.loads(resp.choices[0].message.content)
+            except Exception as e:
+                last_err = e
+                if idx < len(temps):
+                    logger.warning(
+                        "Content JSON decode/call failed (attempt %d/%d). Retrying with lower temperature.",
+                        idx,
+                        len(temps),
+                    )
+        raise last_err
 
     content = _call_openai(prompt)
 
     # Validate structure/text — if director prompt produced bad output, retry with hardcoded
     if "slides" not in content or len(content.get("slides", [])) < 3 or _has_missing_slide_text(content):
         if director_prompt:
-            logger.warning("Director prompt produced invalid or incomplete content. Retrying with default prompt.")
-            fallback_prompt = _DEFAULT_CONTENT_FALLBACK.format(
-                topic=topic_text,
-                key_points=key_points_text,
-                context=context_text,
-                total_slides=total_slides,
-                num_content_slides=num_content_slides,
-            )
+            logger.warning("Director prompt produced invalid/incomplete content. Retrying with fallback prompt.")
             content = _call_openai(fallback_prompt)
             if "slides" not in content or len(content.get("slides", [])) < 3:
                 raise ValueError(f"Invalid content structure: {list(content.keys())}")

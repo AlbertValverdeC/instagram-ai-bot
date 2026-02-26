@@ -49,6 +49,7 @@ _schema_initialized = False
 _schema_lock = threading.Lock()
 
 POST_STATUS_GENERATED = "generated"
+POST_STATUS_DRAFT = "draft"
 POST_STATUS_PUBLISH_ERROR = "publish_error"
 POST_STATUS_PUBLISHED = "published"  # Legacy compatibility
 POST_STATUS_PUBLISHED_ACTIVE = "published_active"
@@ -59,6 +60,11 @@ PUBLISHED_STATUSES = {
     POST_STATUS_PUBLISHED_ACTIVE,
 }
 RETRYABLE_STATUSES = {
+    POST_STATUS_GENERATED,
+    POST_STATUS_PUBLISH_ERROR,
+}
+PUBLISHABLE_STATUSES = {
+    POST_STATUS_DRAFT,
     POST_STATUS_GENERATED,
     POST_STATUS_PUBLISH_ERROR,
 }
@@ -85,6 +91,7 @@ posts_table = Table(
     Column("published_at", DateTime(timezone=True), nullable=True, index=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("topic_payload", JSON, nullable=True),
+    Column("proposal_payload", JSON, nullable=True),
     Column("content_payload", JSON, nullable=True),
     Column("strategy_payload", JSON, nullable=True),
 )
@@ -296,6 +303,7 @@ _POSTS_MIGRATIONS = [
     ("last_error_code", "ALTER TABLE posts ADD COLUMN last_error_code VARCHAR(64)"),
     ("last_error_message", "ALTER TABLE posts ADD COLUMN last_error_message TEXT"),
     ("ig_last_checked_at", "ALTER TABLE posts ADD COLUMN ig_last_checked_at TIMESTAMP"),
+    ("proposal_payload", "ALTER TABLE posts ADD COLUMN proposal_payload JSON"),
 ]
 
 
@@ -475,6 +483,7 @@ def _insert_post_sources(conn, *, post_id: int, source_urls: list[str]) -> int:
 def create_generated_post(
     *,
     topic: dict,
+    proposal: dict | None = None,
     content: dict,
     strategy: dict,
     status: str = POST_STATUS_GENERATED,
@@ -504,6 +513,7 @@ def create_generated_post(
                 publish_attempts=0,
                 published_at=None,
                 topic_payload=topic,
+                proposal_payload=proposal,
                 content_payload=content,
                 strategy_payload=strategy,
             )
@@ -516,6 +526,25 @@ def create_generated_post(
             .values(source_count=source_count)
         )
     return post_id
+
+
+def create_draft_post(
+    *,
+    topic: dict,
+    proposal: dict | None,
+    content: dict,
+    strategy: dict,
+) -> int:
+    """
+    Persist a user-selected proposal as draft (ready to publish).
+    """
+    return create_generated_post(
+        topic=topic,
+        proposal=proposal,
+        content=content,
+        strategy=strategy,
+        status=POST_STATUS_DRAFT,
+    )
 
 
 def mark_post_publish_attempt(post_id: int) -> None:
@@ -615,28 +644,80 @@ def mark_post_ig_deleted(*, post_id: int, reason: str | None = None) -> None:
 
 def get_post(post_id: int) -> dict | None:
     ensure_schema()
+    safe_post_id = int(post_id)
     with get_engine().begin() as conn:
         row = conn.execute(
             select(
                 posts_table.c.id,
                 posts_table.c.ig_media_id,
                 posts_table.c.topic,
+                posts_table.c.caption,
+                posts_table.c.virality_score,
                 posts_table.c.topic_payload,
+                posts_table.c.proposal_payload,
                 posts_table.c.content_payload,
                 posts_table.c.strategy_payload,
                 posts_table.c.status,
                 posts_table.c.ig_status,
+                posts_table.c.source_count,
                 posts_table.c.publish_attempts,
                 posts_table.c.last_error_tag,
                 posts_table.c.last_error_code,
                 posts_table.c.last_error_message,
+                posts_table.c.last_publish_attempt_at,
+                posts_table.c.ig_last_checked_at,
                 posts_table.c.published_at,
                 posts_table.c.created_at,
             )
-            .where(posts_table.c.id == int(post_id))
+            .where(posts_table.c.id == safe_post_id)
             .limit(1)
         ).mappings().first()
-    return dict(row) if row else None
+        if not row:
+            return None
+
+        src_rows = conn.execute(
+            select(post_sources_table.c.source_url)
+            .where(post_sources_table.c.post_id == safe_post_id)
+            .order_by(post_sources_table.c.id.asc())
+        ).mappings().all()
+
+        metric_row = conn.execute(
+            select(
+                post_metrics_table.c.collected_at,
+                post_metrics_table.c.impressions,
+                post_metrics_table.c.reach,
+                post_metrics_table.c.likes,
+                post_metrics_table.c.comments,
+                post_metrics_table.c.saves,
+                post_metrics_table.c.shares,
+                post_metrics_table.c.engagement_rate,
+            )
+            .where(post_metrics_table.c.post_id == safe_post_id)
+            .order_by(post_metrics_table.c.collected_at.desc(), post_metrics_table.c.id.desc())
+            .limit(1)
+        ).mappings().first()
+
+    out = dict(row)
+    for key in ("last_publish_attempt_at", "ig_last_checked_at", "published_at", "created_at"):
+        value = out.get(key)
+        if isinstance(value, datetime):
+            out[key] = value.isoformat()
+
+    out["source_urls"] = [r["source_url"] for r in src_rows]
+    if metric_row:
+        out["metrics"] = {
+            "collected_at": metric_row["collected_at"].isoformat() if metric_row["collected_at"] else None,
+            "impressions": metric_row["impressions"],
+            "reach": metric_row["reach"],
+            "likes": metric_row["likes"],
+            "comments": metric_row["comments"],
+            "saves": metric_row["saves"],
+            "shares": metric_row["shares"],
+            "engagement_rate": metric_row["engagement_rate"],
+        }
+    else:
+        out["metrics"] = None
+    return out
 
 
 def list_retryable_posts(limit: int = 20) -> list[dict]:

@@ -40,6 +40,14 @@ def api_state():
         with open(content_file, encoding="utf-8") as f:
             content = json.load(f)
 
+    proposals = []
+    proposals_file = DATA_DIR / "last_proposals.json"
+    if proposals_file.exists():
+        with open(proposals_file, encoding="utf-8") as f:
+            loaded = json.load(f)
+            if isinstance(loaded, list):
+                proposals = loaded
+
     slides = sorted(f.name for f in OUTPUT_DIR.glob("slide_*.png"))
 
     history = []
@@ -52,6 +60,7 @@ def api_state():
         {
             "topic": topic,
             "content": content,
+            "proposals": proposals,
             "slides": slides,
             "history_count": len(history),
         }

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiClient, setApiTokenGetter } from './api/client';
+import { ProposalSelector } from './components/content/ProposalSelector';
 import { TopicCard } from './components/content/TopicCard';
 import { SlidesPreview } from './components/content/SlidesPreview';
 import { Lightbox } from './components/content/Lightbox';
@@ -10,9 +11,10 @@ import { PromptsModal } from './components/modals/PromptsModal';
 import { SourcesModal } from './components/modals/SourcesModal';
 import { Controls } from './components/pipeline/Controls';
 import { ConsoleOutput } from './components/pipeline/ConsoleOutput';
+import { PostDetailModal } from './components/posts/PostDetailModal';
 import { PostsHistory } from './components/posts/PostsHistory';
 import { usePipelineState } from './hooks/usePipelineState';
-import type { ApiStateResponse, PostRecord } from './types';
+import type { ApiStateResponse, PostRecord, TextProposal } from './types';
 
 const API_TOKEN_STORAGE_KEY = 'dashboard_api_token';
 
@@ -46,10 +48,15 @@ export default function App() {
   const [dashboardState, setDashboardState] = useState<ApiStateResponse>({
     topic: null,
     content: null,
+    proposals: [],
     slides: [],
     history_count: 0
   });
   const [slidesCacheBust, setSlidesCacheBust] = useState(Date.now());
+  const [proposals, setProposals] = useState<TextProposal[]>([]);
+  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
+  const [generatingProposals, setGeneratingProposals] = useState(false);
+  const [creatingDraft, setCreatingDraft] = useState(false);
 
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
@@ -58,6 +65,10 @@ export default function App() {
   const [syncMessage, setSyncMessage] = useState('');
   const [syncColor, setSyncColor] = useState<'green' | 'orange' | 'red' | 'dim'>('dim');
   const [syncing, setSyncing] = useState(false);
+
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<PostRecord | null>(null);
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxSlides, setLightboxSlides] = useState<string[]>([]);
@@ -111,11 +122,13 @@ export default function App() {
     try {
       const data = await apiClient.getState();
       setDashboardState(data);
+      setProposals(Array.isArray(data.proposals) ? data.proposals : []);
       setSlidesCacheBust(Date.now());
       await Promise.all([loadDbStatus(), loadPosts()]);
     } catch (error) {
       if (errorStatus(error) === 401) {
-        setDashboardState({ topic: null, content: null, slides: [], history_count: 0 });
+        setDashboardState({ topic: null, content: null, proposals: [], slides: [], history_count: 0 });
+        setProposals([]);
         setPosts([]);
         setDbStatusText('Acceso no autorizado. Configura el token del dashboard.');
         setDbStatusColor('orange');
@@ -136,6 +149,17 @@ export default function App() {
     }
     prevStatusRef.current = next;
   }, [statusState.status, loadState]);
+
+  useEffect(() => {
+    if (proposals.length === 0) {
+      setSelectedProposalId(null);
+      return;
+    }
+    const stillExists = selectedProposalId && proposals.some((p) => String(p.id) === selectedProposalId);
+    if (!stillExists) {
+      setSelectedProposalId(String(proposals[0].id || 'p1'));
+    }
+  }, [proposals, selectedProposalId]);
 
   const run = useCallback(
     async (mode: 'test' | 'dry-run' | 'live') => {
@@ -196,6 +220,66 @@ export default function App() {
     }
   }, [refreshStatus, setRunningLabel, setStatusState, topicInput]);
 
+  const generateProposals = useCallback(async () => {
+    setGeneratingProposals(true);
+    setSyncMessage('Nivel 1 en ejecución: buscando noticias y creando propuestas...');
+    setSyncColor('dim');
+    try {
+      const topic = topicInput.trim();
+      const data = await apiClient.generateProposals({ topic: topic || undefined, count: 3 });
+      const nextProposals = Array.isArray(data.proposals) ? data.proposals : [];
+      setDashboardState((prev) => ({ ...prev, topic: data.topic }));
+      setProposals(nextProposals);
+      setSelectedProposalId(nextProposals.length > 0 ? String(nextProposals[0].id || 'p1') : null);
+      setSyncMessage(`Nivel 1 completado: ${nextProposals.length} propuestas generadas.`);
+      setSyncColor('green');
+      await Promise.all([loadPosts(), loadDbStatus()]);
+    } catch (error) {
+      setSyncMessage(`Nivel 1 falló: ${errorMessage(error)}`);
+      setSyncColor('red');
+    } finally {
+      setGeneratingProposals(false);
+    }
+  }, [loadDbStatus, loadPosts, topicInput]);
+
+  const createDraftFromProposal = useCallback(async () => {
+    if (!dashboardState.topic) {
+      window.alert('Primero genera propuestas (Nivel 1).');
+      return;
+    }
+    const selected = proposals.find((p) => String(p.id) === selectedProposalId);
+    if (!selected) {
+      window.alert('Selecciona una propuesta.');
+      return;
+    }
+
+    setCreatingDraft(true);
+    setSyncMessage('Nivel 2 en ejecución: creando draft y slides...');
+    setSyncColor('dim');
+    try {
+      const data = await apiClient.createDraft({
+        topic: dashboardState.topic as Record<string, unknown>,
+        proposal: selected,
+        template: selectedTemplate ?? undefined
+      });
+      setDashboardState((prev) => ({
+        ...prev,
+        topic: data.topic,
+        content: data.content,
+        slides: data.slides
+      }));
+      setSlidesCacheBust(Date.now());
+      setSyncMessage(`Nivel 2 completado: draft #${data.post_id} guardado en BBDD.`);
+      setSyncColor('green');
+      await loadPosts();
+    } catch (error) {
+      setSyncMessage(`Nivel 2 falló: ${errorMessage(error)}`);
+      setSyncColor('red');
+    } finally {
+      setCreatingDraft(false);
+    }
+  }, [dashboardState.topic, proposals, selectedProposalId, selectedTemplate, loadPosts]);
+
   const syncNow = useCallback(async () => {
     setSyncing(true);
     setSyncMessage('Sincronizando estado + métricas de Instagram...');
@@ -220,6 +304,26 @@ export default function App() {
       setSyncing(false);
     }
   }, [loadPosts]);
+
+  const publishDraft = useCallback(
+    async (postId: number) => {
+      if (!window.confirm(`¿Publicar draft #${postId} en Instagram ahora?`)) {
+        return;
+      }
+      setSyncMessage(`Nivel 3 en ejecución: publicando draft #${postId}...`);
+      setSyncColor('dim');
+      try {
+        const data = await apiClient.publishPost(postId);
+        setSyncMessage(`Nivel 3 completado (#${postId}) → Media ID ${data.media_id || '-'}`);
+        setSyncColor('green');
+        await loadPosts();
+      } catch (error) {
+        setSyncMessage(`Nivel 3 falló (#${postId}): ${errorMessage(error)}`);
+        setSyncColor('red');
+      }
+    },
+    [loadPosts]
+  );
 
   const retryPublish = useCallback(
     async (postId: number) => {
@@ -246,6 +350,19 @@ export default function App() {
     },
     [loadPosts]
   );
+
+  const openPostDetail = useCallback(async (postId: number) => {
+    setDetailOpen(true);
+    setDetailLoading(true);
+    try {
+      const data = await apiClient.getPostDetail(postId);
+      setSelectedPost(data.post || null);
+    } catch {
+      setSelectedPost(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
 
   const saveToken = () => {
     const token = tokenInput.trim();
@@ -288,13 +405,39 @@ export default function App() {
 
       <main className="mx-auto w-full max-w-[1600px] flex-1 space-y-8 p-6 lg:p-10">
         <Controls
-          running={running}
+          running={running || generatingProposals || creatingDraft}
           topic={topicInput}
           selectedTemplate={selectedTemplate}
           onTopicChange={setTopicInput}
           onSelectTemplate={setSelectedTemplate}
           onRun={run}
           onSearchTopic={searchTopicOnly}
+        />
+
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border-dark bg-secondary-dark p-4">
+          <div>
+            <p className="text-sm font-semibold text-white">Flujo por niveles</p>
+            <p className="text-xs text-text-subtle">
+              Nivel 1: propuestas, Nivel 2: draft+slides, Nivel 3: publicar draft, Nivel 4: E2E live.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={generateProposals}
+            disabled={running || generatingProposals || creatingDraft}
+            className="rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-background-dark transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {generatingProposals ? 'Nivel 1 en curso...' : 'Nivel 1 · Generar propuestas'}
+          </button>
+        </section>
+
+        <ProposalSelector
+          proposals={proposals}
+          selectedId={selectedProposalId}
+          loading={generatingProposals}
+          creatingDraft={creatingDraft}
+          onSelect={setSelectedProposalId}
+          onCreateDraft={createDraftFromProposal}
         />
 
         {/* Content Grid: Topic+Console left, Slides right */}
@@ -317,7 +460,9 @@ export default function App() {
           syncColor={syncColor}
           syncing={syncing}
           onSync={syncNow}
+          onPublish={publishDraft}
           onRetry={retryPublish}
+          onOpen={openPostDetail}
         />
       </main>
 
@@ -336,6 +481,13 @@ export default function App() {
       <KeysModal open={keysOpen} onClose={() => setKeysOpen(false)} />
       <PromptsModal open={promptsOpen} onClose={() => setPromptsOpen(false)} />
       <SourcesModal open={sourcesOpen} onClose={() => setSourcesOpen(false)} />
+      <PostDetailModal
+        open={detailOpen}
+        post={selectedPost}
+        loading={detailLoading}
+        onClose={() => setDetailOpen(false)}
+        onPublish={publishDraft}
+      />
     </div>
   );
 }

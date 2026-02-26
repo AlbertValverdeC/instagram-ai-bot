@@ -470,19 +470,38 @@ def _create_carousel_item(image_url: str) -> str:
 
 
 def _create_carousel_container(item_ids: list[str], caption: str) -> str:
-    """Create the carousel container with all items. Returns the container ID."""
-    payload = _graph_post(
-        f"{INSTAGRAM_ACCOUNT_ID}/media",
-        data={
-            "media_type": "CAROUSEL",
-            "children": ",".join(item_ids),
-            "caption": caption,
-            "access_token": META_ACCESS_TOKEN,
-        },
-    )
-    container_id = _extract_meta_id(payload, context="carousel_container_create")
-    logger.info(f"Created carousel container: {container_id}")
-    return container_id
+    """Create the carousel container with all items. Returns the container ID.
+
+    Retries up to 3 times when Meta returns id=0 (transient API glitch).
+    """
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        payload = _graph_post(
+            f"{INSTAGRAM_ACCOUNT_ID}/media",
+            data={
+                "media_type": "CAROUSEL",
+                "children": ",".join(item_ids),
+                "caption": caption,
+                "access_token": META_ACCESS_TOKEN,
+            },
+        )
+        raw_id = str(payload.get("id", "")).strip()
+        if raw_id == "0" and attempt < max_attempts:
+            logger.warning(
+                "Meta carousel_container_create returned id=0 (attempt %d/%d). "
+                "Retrying in %ds...",
+                attempt,
+                max_attempts,
+                10 * attempt,
+            )
+            import time
+            time.sleep(10 * attempt)
+            continue
+        container_id = _extract_meta_id(payload, context="carousel_container_create")
+        logger.info(f"Created carousel container: {container_id}")
+        return container_id
+    # Should not reach here, but just in case
+    raise RuntimeError("Meta carousel_container_create failed after retries")
 
 
 def _wait_container_ready(

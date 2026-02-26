@@ -61,11 +61,40 @@ def _classify_publish_error(exc: Exception) -> dict:
         "Revisa el detalle técnico y reintenta."
     )
 
+    # ── Known Meta error classification ──────────────────────────────
+    #
+    # tag                       | code/subcode  | meaning
+    # ─────────────────────────┼───────────────┼──────────────────────
+    # image_url_invalid         | —             | Meta can't fetch image URLs
+    # meta_media_upload_failed  | 2207032       | Image processing failed server-side
+    # meta_container_id_zero    | —             | Container create returned id=0
+    # meta_rate_limit           | 4/17/32/613   | App/account rate-limited
+    #                           | 2207051       |   (subcode variant)
+    # meta_fatal_after_limit    | 2207085+fatal | Fatal error after rate-limit
+    # ig_object_not_found       | 33            | Container/media ID not found
+    # meta_auth                 | 190           | Token expired or invalid
+    # meta_copyright            | 2207026       | Copyright/content policy violation
+    # meta_session_expired      | 2207001       | Upload session expired
+    # publish_unknown           | —             | Unclassified error
+    # ─────────────────────────────────────────────────────────────────
+
     if "image url is not valid for instagram graph api" in low:
         tag = "image_url_invalid"
         summary = (
             "Meta no pudo acceder a las imágenes públicas del carrusel. "
             "Verifica PUBLIC_IMAGE_BASE_URL y que los PNG respondan con HTTP 200."
+        )
+    elif "2207032" in raw or "media upload has failed" in low:
+        tag = "meta_media_upload_failed"
+        summary = (
+            "Meta falló al procesar las imágenes del carrusel (error 2207032). "
+            "Suele ser transitorio — reintenta la publicación."
+        )
+    elif "returned invalid id=0" in low or "returned id=0" in low:
+        tag = "meta_container_id_zero"
+        summary = (
+            "Meta devolvió id=0 al crear el contenedor del carrusel. "
+            "Error transitorio de la API — reintenta."
         )
     elif (
         "application request limit reached" in low
@@ -94,6 +123,18 @@ def _classify_publish_error(exc: Exception) -> dict:
         summary = (
             "Meta devolvió error fatal tras un límite de peticiones. "
             "Reintenta más tarde para evitar bloqueo por rate-limit."
+        )
+    elif "2207026" in raw or "copyright" in low:
+        tag = "meta_copyright"
+        summary = (
+            "Meta rechazó el contenido por política de copyright (2207026). "
+            "Cambia las imágenes o el contenido y reintenta."
+        )
+    elif "2207001" in raw or "session" in low and "expired" in low:
+        tag = "meta_session_expired"
+        summary = (
+            "La sesión de upload de Meta expiró (2207001). "
+            "Reintenta — el contenedor tardó demasiado en procesarse."
         )
 
     return {

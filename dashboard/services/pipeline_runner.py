@@ -118,6 +118,14 @@ def extract_pipeline_error_summary(output: str) -> str | None:
         return "Meta no puede leer las imágenes públicas. Revisa PUBLIC_IMAGE_BASE_URL."
     if "unauthorized" in low or "code=190" in low:
         return "Token/permisos de Meta inválidos o expirados."
+    if "2207032" in failure or "media upload has failed" in low:
+        return "Meta falló al procesar imágenes (2207032). Transitorio — reintenta."
+    if "returned invalid id=0" in low or "returned id=0" in low:
+        return "Meta devolvió id=0. Error transitorio — reintenta."
+    if "2207026" in failure or "copyright" in low:
+        return "Meta rechazó contenido por copyright (2207026)."
+    if "2207001" in failure:
+        return "Sesión de upload expirada (2207001). Reintenta."
     return failure[:240]
 
 
@@ -152,11 +160,35 @@ def classify_publish_error_text(raw_error: str) -> tuple[str, str, str | None]:
             "Meta no puede acceder a las imágenes públicas. Revisa PUBLIC_IMAGE_BASE_URL.",
             code,
         )
+    if "2207032" in text or "media upload has failed" in low:
+        return (
+            "meta_media_upload_failed",
+            "Meta falló al procesar imágenes del carrusel (2207032). Transitorio — reintenta.",
+            code or "2207032",
+        )
+    if "returned invalid id=0" in low or "returned id=0" in low:
+        return (
+            "meta_container_id_zero",
+            "Meta devolvió id=0 al crear contenedor. Error transitorio — reintenta.",
+            code,
+        )
     if "unauthorized" in low or "code=190" in text:
         return (
             "meta_auth",
             "Token/permisos de Meta inválidos o expirados.",
             code,
+        )
+    if "2207026" in text or "copyright" in low:
+        return (
+            "meta_copyright",
+            "Meta rechazó contenido por copyright (2207026).",
+            code or "2207026",
+        )
+    if "2207001" in text:
+        return (
+            "meta_session_expired",
+            "Sesión de upload expirada (2207001). Reintenta.",
+            code or "2207001",
         )
     return ("publish_unknown", text[:220], code)
 

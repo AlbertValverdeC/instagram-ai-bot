@@ -515,6 +515,10 @@ def _wait_container_ready(
     Poll media container until FINISHED.
     Raises on ERROR/EXPIRED or timeout.
     """
+    # Transient Meta error codes that may resolve on retry of the whole
+    # container creation flow.  We still raise so the caller can decide.
+    _TRANSIENT_ERROR_CODES = {"2207032", "2207001"}
+
     for attempt in range(1, max_attempts + 1):
         status_payload = _graph_get(
             container_id,
@@ -526,9 +530,15 @@ def _wait_container_ready(
         if status == "FINISHED":
             return
         if status in {"ERROR", "EXPIRED"}:
+            status_text = status_payload.get("status", "")
+            # Check if this is a known transient error
+            is_transient = any(
+                code in str(status_text) for code in _TRANSIENT_ERROR_CODES
+            )
             raise RuntimeError(
                 f"{kind} container {container_id} failed with status={status}. "
                 f"Payload={_truncate_json(status_payload)}"
+                + (" [transient]" if is_transient else "")
             )
         if attempt >= max_attempts:
             raise RuntimeError(
@@ -763,12 +773,29 @@ def publish(image_paths: list[Path], content: dict, strategy: dict) -> str:
         item_ids.append(item_id)
         time.sleep(1)
 
-    # Step 3: Create and publish carousel
+    # Step 3: Create and publish carousel (retry on transient container errors)
     logger.info("Step 3/3: Publishing carousel...")
-    container_id = _create_carousel_container(item_ids, full_caption)
-    media_id = _publish_container(container_id, expected_caption=full_caption)
+    container_retries = 3
+    for container_attempt in range(1, container_retries + 1):
+        container_id = _create_carousel_container(item_ids, full_caption)
+        try:
+            media_id = _publish_container(container_id, expected_caption=full_caption)
+            return media_id
+        except RuntimeError as e:
+            if "[transient]" in str(e) and container_attempt < container_retries:
+                logger.warning(
+                    "Transient container error (attempt %d/%d): %s. "
+                    "Re-creating container in %ds...",
+                    container_attempt,
+                    container_retries,
+                    str(e)[:200],
+                    15 * container_attempt,
+                )
+                time.sleep(15 * container_attempt)
+                continue
+            raise
 
-    return media_id
+    raise RuntimeError("Carousel publish failed after container retries")
 
 
 # ── History Management ───────────────────────────────────────────────────────

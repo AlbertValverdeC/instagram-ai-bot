@@ -35,57 +35,81 @@ app = Flask(__name__)
 PROMPTS_CONFIG = [
     {
         "id": "research_meta",
-        "name": "Meta-prompt investigacion",
-        "description": "GPT-4o genera un prompt optimizado para que GPT-4o-mini seleccione el mejor tema del dia.",
+        "name": "Meta-prompt de investigación",
+        "description": "Define cómo el Director redacta el prompt final que se usará para elegir el tema.",
         "category": "Investigacion",
         "type": "meta",
         "module": "prompt_director.py",
         "variables": ["day_name", "num_articles", "has_trends", "past_count"],
+        "what_it_does": "No selecciona el tema directamente. Diseña las instrucciones para que el modelo de ranking haga una mejor selección.",
+        "when_it_runs": "Se ejecuta al inicio de la fase de Investigación. Si falla, el sistema usa el prompt fallback de investigación.",
+        "if_you_change_it": "Cambias el criterio de selección (viralidad, frescura, variedad). Si quitas la exigencia de JSON o estructuras clave, aumentan los reintentos/fallos.",
+        "risk_level": "medio-alto",
     },
     {
         "id": "research_fallback",
         "name": "Ranking de temas (fallback)",
-        "description": "Prompt que analiza articulos y selecciona el mejor tema. Se usa si el Prompt Director falla.",
+        "description": "Prompt directo que elige tema, key points y fuentes cuando el Director no sirve.",
         "category": "Investigacion",
         "type": "fallback",
         "module": "researcher.py",
         "variables": ["articles_text", "trends_text", "past_text"],
+        "what_it_does": "Este prompt sí decide el tema final cuando el meta-prompt falla o devuelve una estructura inválida.",
+        "when_it_runs": "Se usa como respaldo en Investigación y en reintentos de robustez.",
+        "if_you_change_it": "Impacto directo en la calidad del tema y los puntos. Si lo vuelves ambiguo, saldrán temas vagos; si rompes formato JSON, fallará el paso.",
+        "risk_level": "alto",
     },
     {
         "id": "content_meta",
         "name": "Meta-prompt contenido",
-        "description": "GPT-4o genera un prompt optimizado para crear contenido de carrusel viral.",
+        "description": "Define cómo el Director construye el prompt que generará los 8 slides y el caption.",
         "category": "Contenido",
         "type": "meta",
         "module": "prompt_director.py",
         "variables": ["topic_title", "topic_en", "key_points", "virality", "day_name", "tone_hint", "style_hint"],
+        "what_it_does": "Ajusta tono, hook, narrativa y estructura para que el generador de contenido produzca un carrusel coherente y viral.",
+        "when_it_runs": "Se ejecuta al inicio de la fase de Contenido. Si el resultado sale inválido, se usa el fallback de contenido.",
+        "if_you_change_it": "Afecta estilo, agresividad del copy y claridad del relato. Si quitas reglas de estructura, aumenta el riesgo de slides incompletos.",
+        "risk_level": "medio-alto",
     },
     {
         "id": "content_fallback",
         "name": "Generador de carrusel (fallback)",
-        "description": "Prompt que genera los 8 slides del carrusel. Se usa si el Prompt Director falla.",
+        "description": "Prompt directo de generación de texto para cover, contenido, CTA y caption.",
         "category": "Contenido",
         "type": "fallback",
         "module": "content_generator.py",
         "variables": ["topic", "key_points", "context", "total_slides", "num_content_slides"],
+        "what_it_does": "Genera la salida final en JSON cuando el meta-prompt de contenido no funciona.",
+        "when_it_runs": "Se usa en fallback o retry cuando la respuesta del modelo viene incompleta o con claves incorrectas.",
+        "if_you_change_it": "Impacto directo en títulos, cuerpo y CTA. Si eliminas requisitos de conteo/JSON, volverán los problemas de slides vacíos o inválidos.",
+        "risk_level": "alto",
     },
     {
         "id": "image_meta",
-        "name": "Meta-prompt imagen",
-        "description": "GPT-4o genera un prompt de imagen optimizado para Imagen 4 basado en el tema.",
+        "name": "Meta-prompt de imagen",
+        "description": "Define cómo se redacta el prompt visual principal del cover.",
         "category": "Imagen",
         "type": "meta",
         "module": "prompt_director.py",
         "variables": ["topic_en"],
+        "what_it_does": "Construye el prompt de imagen principal con la temática del tema, estilo ilustrado y composición (sujeto arriba, texto abajo).",
+        "when_it_runs": "Se ejecuta al entrar en la fase de Diseño, antes de generar la imagen de portada.",
+        "if_you_change_it": "Cambia estética y composición. Si añades personas reales, logos o texto en imagen, pueden activarse filtros y bajar la tasa de éxito.",
+        "risk_level": "medio",
     },
     {
         "id": "image_fallback",
         "name": "Prompt imagen (fallback)",
-        "description": "Prompt generico para el fondo del cover cuando Imagen 4 bloquea el prompt del Director.",
+        "description": "Prompt de emergencia para generar imagen cuando el prompt principal es bloqueado o devuelve vacío.",
         "category": "Imagen",
         "type": "fallback",
         "module": "image_generator.py",
         "variables": [],
+        "what_it_does": "Mantiene una salida visual estable cuando falla el prompt principal de imagen.",
+        "when_it_runs": "Se usa en segunda vuelta, después de un fallo de generación inicial.",
+        "if_you_change_it": "Define el look de contingencia. Si lo haces demasiado arriesgado, puede fallar también y terminar en degradado local.",
+        "risk_level": "medio",
     },
 ]
 
@@ -126,11 +150,20 @@ API_KEYS_CONFIG = [
     {
         "key": "GOOGLE_AI_API_KEY",
         "label": "Google AI API Key",
-        "hint": "Gemini Imagen 3 para fondos AI del cover. Sin ella se usan degradados.",
+        "hint": "Clave para generar imágenes AI (Gemini image / Imagen). Sin ella se usan degradados.",
         "placeholder": "AIza...",
         "required": False,
         "group": "AI Models",
         "url": "https://aistudio.google.com/apikey",
+    },
+    {
+        "key": "GOOGLE_IMAGE_MODEL",
+        "label": "Google Image Model",
+        "hint": "Modelo de imagen. Recomendado: gemini-2.5-flash-image (Nano Banana).",
+        "placeholder": "gemini-2.5-flash-image",
+        "required": False,
+        "group": "AI Models",
+        "secret": False,
     },
     {
         "key": "DIRECTOR_MODEL",
@@ -144,11 +177,29 @@ API_KEYS_CONFIG = [
     {
         "key": "NEWSAPI_KEY",
         "label": "NewsAPI Key",
-        "hint": "Noticias tech de newsapi.org. Tier gratuito: 1.500 req/mes.",
+        "hint": "Opcional. Se usa en backend legacy como fuente adicional.",
         "placeholder": "",
-        "required": True,
+        "required": False,
         "group": "Data Sources",
         "url": "https://newsapi.org/register",
+    },
+    {
+        "key": "TAVILY_API_KEY",
+        "label": "Tavily API Key",
+        "hint": "Buscador web para investigación de tendencias. Recomendado para modo simplificado.",
+        "placeholder": "tvly-...",
+        "required": False,
+        "group": "Data Sources",
+        "url": "https://tavily.com",
+    },
+    {
+        "key": "RESEARCH_BACKEND",
+        "label": "Research Backend",
+        "hint": "Motor de investigación: auto | tavily | legacy. Recomendado: auto.",
+        "placeholder": "auto",
+        "required": False,
+        "group": "Data Sources",
+        "secret": False,
     },
     {
         "key": "REDDIT_CLIENT_ID",
@@ -198,18 +249,36 @@ API_KEYS_CONFIG = [
     {
         "key": "META_ACCESS_TOKEN",
         "label": "Meta Access Token",
-        "hint": "Token con permisos instagram_basic + instagram_content_publish.",
+        "hint": "Token de System User con permisos instagram_basic + instagram_content_publish + pages_*.",
         "placeholder": "EAA...",
         "required": True,
         "group": "Publishing",
         "url": "https://developers.facebook.com/tools/explorer/",
     },
     {
+        "key": "GRAPH_API_VERSION",
+        "label": "Graph API Version",
+        "hint": "Versión de Graph API para publicar. Recomendado: v25.0.",
+        "placeholder": "v25.0",
+        "required": False,
+        "group": "Publishing",
+        "secret": False,
+    },
+    {
+        "key": "PUBLIC_IMAGE_BASE_URL",
+        "label": "Public Image Base URL",
+        "hint": "Base URL pública directa de tus slides (ngrok/CDN). Ej: https://tu-dominio.com/output",
+        "placeholder": "https://tu-dominio.com/output",
+        "required": False,
+        "group": "Publishing",
+        "secret": False,
+    },
+    {
         "key": "IMGUR_CLIENT_ID",
         "label": "Imgur Client ID",
-        "hint": "Para hostear temporalmente las imágenes antes de publicar en Instagram.",
+        "hint": "Fallback de hosting temporal si no usas PUBLIC_IMAGE_BASE_URL.",
         "placeholder": "",
-        "required": True,
+        "required": False,
         "group": "Publishing",
         "url": "https://api.imgur.com/oauth2/addclient",
     },
@@ -302,7 +371,7 @@ def _find_python():
     return sys.executable
 
 
-def _run_pipeline(mode: str, template: int | None):
+def _run_pipeline(mode: str, template: int | None, topic: str | None = None, step: str | None = None):
     global _state
     cmd = [_find_python(), str(PROJECT_ROOT / "main_pipeline.py")]
     if mode == "test":
@@ -311,6 +380,10 @@ def _run_pipeline(mode: str, template: int | None):
         cmd.append("--dry-run")
     if template is not None:
         cmd.extend(["--template", str(template)])
+    if step:
+        cmd.extend(["--step", step])
+    if topic:
+        cmd.extend(["--topic", topic.strip()])
 
     try:
         proc = subprocess.Popen(
@@ -383,17 +456,46 @@ def api_run():
     template = data.get("template")
     if template is not None:
         template = int(template)
+    topic = (data.get("topic") or "").strip() or None
 
     with _lock:
         _state["status"] = "running"
         _state["output"] = ""
         _state["started_at"] = time.time()
         _state["finished_at"] = None
-        _state["mode"] = mode
+        _state["mode"] = mode if not topic else f"{mode} (topic: {topic})"
 
-    thread = threading.Thread(target=_run_pipeline, args=(mode, template), daemon=True)
+    thread = threading.Thread(target=_run_pipeline, args=(mode, template, topic), daemon=True)
     thread.start()
     return jsonify({"status": "started", "mode": mode})
+
+
+@app.route("/api/search-topic", methods=["POST"])
+def api_search_topic():
+    """Run only the research step for a user-provided topic."""
+    with _lock:
+        if _state["status"] == "running":
+            return jsonify({"error": "Pipeline already running"}), 409
+
+    data = request.get_json(silent=True) or {}
+    topic = (data.get("topic") or "").strip()
+    if not topic:
+        return jsonify({"error": "Debes escribir un tema"}), 400
+
+    with _lock:
+        _state["status"] = "running"
+        _state["output"] = ""
+        _state["started_at"] = time.time()
+        _state["finished_at"] = None
+        _state["mode"] = f"research-only (topic: {topic})"
+
+    thread = threading.Thread(
+        target=_run_pipeline,
+        args=("dry-run", None, topic, "research"),
+        daemon=True,
+    )
+    thread.start()
+    return jsonify({"status": "started", "mode": "research-only", "topic": topic})
 
 
 @app.route("/api/status")
@@ -542,6 +644,11 @@ def api_prompts_reset():
 _DEFAULT_RESEARCH_CONFIG = {
     "subreddits": ["artificial", "technology", "MachineLearning", "ChatGPT"],
     "rss_feeds": [
+        "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada",
+        "https://e00-elmundo.uecdn.es/elmundo/rss/portada.xml",
+        "https://www.eldiario.es/rss/",
+        "https://feeds.bbci.co.uk/news/world/rss.xml",
+        "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
         "https://techcrunch.com/feed/",
         "https://www.theverge.com/rss/index.xml",
         "https://feeds.arstechnica.com/arstechnica/index",
@@ -552,7 +659,7 @@ _DEFAULT_RESEARCH_CONFIG = {
         "Microsoft", "Samsung", "Tesla", "chip", "quantum", "cyber",
         "cloud", "data", "neural", "OpenAI", "startup", "software",
     ],
-    "newsapi_domains": "techcrunch.com,theverge.com,arstechnica.com,wired.com",
+    "newsapi_domains": "",
 }
 
 
@@ -698,6 +805,18 @@ body{
 .tpl-btn.active{background:rgba(0,200,255,.15)}
 
 .separator{width:1px;height:32px;background:var(--border);margin:0 4px}
+
+.topic-input{
+  min-width:260px;
+  padding:10px 12px;
+  background:var(--bg-code);
+  border:1px solid var(--border);
+  border-radius:8px;
+  color:var(--text);
+  font-size:14px;
+}
+.topic-input:focus{outline:none;border-color:var(--accent)}
+.topic-input::placeholder{color:#64748b}
 
 /* Grid */
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
@@ -900,6 +1019,20 @@ body{
 .prompt-desc{font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.4}
 .prompt-module{font-size:11px;color:var(--text-dim);opacity:.7}
 
+.prompt-help{
+  font-size:12px;color:var(--text);
+  background:rgba(255,255,255,.02);border:1px solid var(--border);
+  border-radius:8px;padding:10px 12px;margin-bottom:12px;line-height:1.45;
+}
+.prompt-help-row{margin:0 0 6px 0}
+.prompt-help-row:last-child{margin-bottom:0}
+.prompt-help-label{font-weight:700;color:var(--accent)}
+.prompt-risk{
+  display:inline-block;padding:2px 8px;border-radius:999px;
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+  background:rgba(251,146,60,.18);color:var(--orange);border:1px solid rgba(251,146,60,.35);
+}
+
 .prompt-vars{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 .prompt-var{
   font-size:11px;padding:3px 8px;border-radius:6px;
@@ -1012,8 +1145,8 @@ body{
 
   <div class="header-right">
     <div class="tip">
-      <button class="btn small" onclick="openSourcesPanel()">📡 Fuentes</button>
-      <span class="tiptext">Configurar las fuentes de investigaci&oacute;n: subreddits, RSS, trends keywords, dominios NewsAPI</span>
+      <button class="btn small" onclick="openSourcesPanel()">📡 Fuentes (avanzado)</button>
+      <span class="tiptext">Opcional. El flujo normal es escribir un tema y buscar. Este panel es solo para personalizaci&oacute;n avanzada.</span>
     </div>
     <div class="tip">
       <button class="btn small" onclick="openPromptsPanel()">✏️ Prompts</button>
@@ -1054,8 +1187,19 @@ body{
     <div class="separator"></div>
 
     <div class="tip">
+      <input id="topicFocusInput" class="topic-input" placeholder="Tema objetivo (ej: AGENTES DE IA)" />
+      <span class="tiptext">Opcional: si escribes un tema, el bot investiga tendencias recientes de ese tema en varias fuentes autom&aacute;ticamente.</span>
+    </div>
+    <div class="tip">
+      <button class="btn small" onclick="searchTopicOnly()" id="btnSearchTopic">🔎 Buscar tema</button>
+      <span class="tiptext">Ejecuta solo investigaci&oacute;n y guarda el topic en data/last_topic.json, sin generar slides ni publicar.</span>
+    </div>
+
+    <div class="separator"></div>
+
+    <div class="tip">
       <span class="label">Template:</span>
-      <span class="tiptext">Esquema de color del carrusel. &laquo;A&raquo; rota autom&aacute;ticamente entre los 4 templates.</span>
+      <span class="tiptext">Esquema de color del carrusel. &laquo;A&raquo; rota autom&aacute;ticamente entre los 5 templates.</span>
     </div>
     <div class="template-selector">
       <div class="tip">
@@ -1077,6 +1221,10 @@ body{
       <div class="tip">
         <div class="tpl-btn" data-tpl="3" onclick="selectTemplate(this)" style="background:linear-gradient(rgb(15,15,25),rgb(40,40,70))"></div>
         <span class="tiptext">midnight &mdash; Carb&oacute;n + naranja</span>
+      </div>
+      <div class="tip">
+        <div class="tpl-btn" data-tpl="4" onclick="selectTemplate(this)" style="background:linear-gradient(rgb(5,5,7),rgb(22,22,28))"></div>
+        <span class="tiptext">editorial_black &mdash; Negro limpio + azul editorial</span>
       </div>
     </div>
   </div>
@@ -1188,7 +1336,7 @@ function selectTemplate(el) {
 
 /* ── Pipeline execution ───────────────────────────────── */
 function setButtons(disabled) {
-  ['btnTest','btnDry','btnLive'].forEach(id => {
+  ['btnTest','btnDry','btnLive','btnSearchTopic'].forEach(id => {
     document.getElementById(id).disabled = disabled;
   });
 }
@@ -1201,6 +1349,9 @@ async function run(mode) {
   updateStatusUI('running');
 
   const body = { mode };
+  const topicInput = document.getElementById('topicFocusInput');
+  const topic = topicInput ? topicInput.value.trim() : '';
+  if (topic) body.topic = topic;
   if (selectedTemplate !== null) body.template = selectedTemplate;
 
   try {
@@ -1208,6 +1359,42 @@ async function run(mode) {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      document.getElementById('output').textContent = `Error: ${err.error}`;
+      setButtons(false);
+      updateStatusUI('error');
+      return;
+    }
+  } catch(e) {
+    document.getElementById('output').textContent = `Error de conexión: ${e}`;
+    setButtons(false);
+    updateStatusUI('error');
+    return;
+  }
+
+  if (polling) clearInterval(polling);
+  polling = setInterval(pollStatus, 1500);
+}
+
+async function searchTopicOnly() {
+  const topicInput = document.getElementById('topicFocusInput');
+  const topic = topicInput ? topicInput.value.trim() : '';
+  if (!topic) {
+    alert('Escribe un tema primero.');
+    return;
+  }
+
+  setButtons(true);
+  document.getElementById('output').textContent = `Buscando tendencias para: ${topic}\n`;
+  updateStatusUI('running');
+
+  try {
+    const res = await fetch('/api/search-topic', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ topic }),
     });
     if (!res.ok) {
       const err = await res.json();
@@ -1482,13 +1669,18 @@ function renderPromptCards() {
   const filtered = promptsData.filter(p => p.category === activePromptTab);
 
   let html = `<div class="prompt-note">
-    Las llaves dobles <code>{{ }}</code> son literales y aparecen tal cual en el texto final.
-    Las llaves simples <code>{variable}</code> se reemplazan autom&aacute;ticamente con datos reales durante la ejecuci&oacute;n.
+    Este panel cambia el comportamiento real del pipeline. Antes de editar, revisa
+    <b>Qu&eacute; hace</b>, <b>Cu&aacute;ndo se usa</b> y <b>Si lo cambias</b> en cada prompt.
+    Las llaves dobles <code>{{ }}</code> son literales. Las llaves simples
+    <code>{variable}</code> se reemplazan con datos reales en ejecuci&oacute;n.
   </div>`;
 
   filtered.forEach(p => {
     const typeBadge = `<span class="prompt-badge ${p.type}">${p.type}</span>`;
     const customBadge = p.custom ? '<span class="prompt-badge custom">Personalizado</span>' : '';
+    const risk = p.risk_level
+      ? `<span class="prompt-risk">${esc(p.risk_level)}</span>`
+      : '<span class="prompt-risk">no definido</span>';
     const vars = p.variables.map(v =>
       `<span class="prompt-var">{${esc(v)}}</span>`
     ).join('');
@@ -1501,6 +1693,24 @@ function renderPromptCards() {
           <span class="prompt-module">${esc(p.module)}</span>
         </div>
         <div class="prompt-desc">${esc(p.description)}</div>
+        <div class="prompt-help">
+          <div class="prompt-help-row">
+            <span class="prompt-help-label">Qu&eacute; hace:</span>
+            ${esc(p.what_it_does || 'Sin descripción')}
+          </div>
+          <div class="prompt-help-row">
+            <span class="prompt-help-label">Cu&aacute;ndo se usa:</span>
+            ${esc(p.when_it_runs || 'Sin descripción')}
+          </div>
+          <div class="prompt-help-row">
+            <span class="prompt-help-label">Si lo cambias:</span>
+            ${esc(p.if_you_change_it || 'Sin descripción')}
+          </div>
+          <div class="prompt-help-row">
+            <span class="prompt-help-label">Riesgo al tocarlo:</span>
+            ${risk}
+          </div>
+        </div>
         ${vars ? `<div class="prompt-vars">${vars}</div>` : ''}
         <textarea class="prompt-textarea" id="prompt-text-${p.id}"
                   spellcheck="false">${esc(p.text)}</textarea>
@@ -1722,6 +1932,16 @@ async function resetSources() {
 }
 
 /* ── Init ─────────────────────────────────────────────── */
+const topicFocusInputEl = document.getElementById('topicFocusInput');
+if (topicFocusInputEl) {
+  topicFocusInputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      searchTopicOnly();
+    }
+  });
+}
+
 loadState();
 fetch('/api/status').then(r=>r.json()).then(d=>{
   if(d.status==='running'){

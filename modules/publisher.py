@@ -2,7 +2,6 @@
 Publisher module: uploads carousel images and publishes to Instagram.
 
 Uses the Instagram Graph API (official Meta API) for carousel publishing.
-Falls back to instagrapi (unofficial) if configured.
 
 Flow:
   1. Upload each image to a public URL (Imgur or custom hosting)
@@ -15,19 +14,30 @@ import json
 import logging
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 import requests
 
 from config.settings import (
+    GRAPH_API_VERSION,
     HISTORY_FILE,
     IMGUR_CLIENT_ID,
     INSTAGRAM_ACCOUNT_ID,
     META_ACCESS_TOKEN,
+    PUBLIC_IMAGE_BASE_URL,
 )
 
 logger = logging.getLogger(__name__)
 
-GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
+
+def _normalize_graph_version(raw: str) -> str:
+    v = (raw or "v25.0").strip()
+    if not v.startswith("v"):
+        v = f"v{v}"
+    return v
+
+
+GRAPH_API_BASE = f"https://graph.facebook.com/{_normalize_graph_version(GRAPH_API_VERSION)}"
 
 
 # ── Image Hosting (Imgur) ────────────────────────────────────────────────────
@@ -51,50 +61,198 @@ def _upload_to_imgur(image_path: Path) -> str:
     return url
 
 
+def _build_public_image_url_candidates(image_path: Path) -> list[str]:
+    """
+    Build candidate public URLs for an image from PUBLIC_IMAGE_BASE_URL.
+
+    It tries common layouts:
+      - {base}/slide_00.png
+      - {base}/slides/slide_00.png
+      - {base}/output/slide_00.png
+    """
+    if not PUBLIC_IMAGE_BASE_URL:
+        raise ValueError("PUBLIC_IMAGE_BASE_URL is not configured")
+
+    base = PUBLIC_IMAGE_BASE_URL.rstrip("/")
+    filename = quote(image_path.name)
+
+    candidates = [
+        f"{base}/{filename}",
+        f"{base}/slides/{filename}",
+        f"{base}/output/{filename}",
+    ]
+
+    deduped = []
+    seen = set()
+    for url in candidates:
+        if url not in seen:
+            seen.add(url)
+            deduped.append(url)
+    return deduped
+
+
+def _check_public_image_url(image_url: str) -> tuple[bool, str]:
+    """Check whether image_url is a direct, publicly fetchable image."""
+    last_error = "unknown"
+    for method in ("HEAD", "GET"):
+        try:
+            resp = requests.request(
+                method,
+                image_url,
+                allow_redirects=True,
+                timeout=20,
+                stream=(method == "GET"),
+            )
+        except requests.RequestException as exc:
+            last_error = str(exc)
+            continue
+
+        content_type = (resp.headers.get("Content-Type", "").split(";")[0].strip().lower())
+        ok_status = 200 <= resp.status_code < 300
+        is_image = content_type.startswith("image/")
+        resp.close()
+
+        if ok_status and is_image:
+            return True, ""
+
+        last_error = f"status={resp.status_code}, content_type={content_type or 'missing'}"
+
+    return False, last_error
+
+
+def _validate_public_image_url(image_url: str):
+    """
+    Validate that Meta can fetch the image URL.
+
+    Rules:
+      - HTTP 2xx
+      - Content-Type starts with image/
+    """
+    is_ok, last_error = _check_public_image_url(image_url)
+    if is_ok:
+        return
+
+    raise RuntimeError(
+        f"Image URL is not valid for Instagram Graph API: {image_url} ({last_error}). "
+        "Use a direct public URL that returns HTTP 200 and image/jpeg or image/png."
+    )
+
+
 def upload_images(image_paths: list[Path]) -> list[str]:
-    """Upload all carousel images and return their public URLs."""
+    """Resolve all carousel images to public URLs and validate each URL."""
     urls = []
+
+    # Option A: direct public URLs from your own CDN/ngrok host.
+    if PUBLIC_IMAGE_BASE_URL:
+        logger.info("Using PUBLIC_IMAGE_BASE_URL for image hosting")
+        for path in image_paths:
+            candidate_urls = _build_public_image_url_candidates(path)
+            resolved = None
+            attempts = []
+            for candidate in candidate_urls:
+                is_ok, err = _check_public_image_url(candidate)
+                attempts.append((candidate, err))
+                if is_ok:
+                    resolved = candidate
+                    break
+
+            if not resolved:
+                detail = "; ".join(f"{u} ({e})" for u, e in attempts)
+                raise RuntimeError(
+                    f"Image URL is not valid for Instagram Graph API for {path.name}. "
+                    f"Tried: {detail}. Use a direct public URL that returns HTTP 200 and image/jpeg or image/png."
+                )
+
+            urls.append(resolved)
+            logger.info(f"Using public URL for {path.name} → {resolved}")
+        logger.info(f"Resolved {len(urls)} images via PUBLIC_IMAGE_BASE_URL")
+        return urls
+
+    # Option B: upload to Imgur as fallback.
+    if not IMGUR_CLIENT_ID:
+        raise ValueError(
+            "No image hosting configured. Set PUBLIC_IMAGE_BASE_URL (recommended) "
+            "or IMGUR_CLIENT_ID."
+        )
+
     for path in image_paths:
         url = _upload_to_imgur(path)
+        _validate_public_image_url(url)
         urls.append(url)
         time.sleep(1)  # Rate limit respect
-    logger.info(f"Uploaded {len(urls)} images")
+    logger.info(f"Uploaded {len(urls)} images via Imgur")
     return urls
 
 
 # ── Instagram Graph API ─────────────────────────────────────────────────────
 
+def _meta_error_text(resp: requests.Response) -> str:
+    """Extract a human-readable Meta Graph API error."""
+    try:
+        payload = resp.json()
+    except ValueError:
+        body = (resp.text or "").strip()
+        return f"HTTP {resp.status_code}: {body[:300]}"
+
+    err = payload.get("error") if isinstance(payload, dict) else None
+    if not err:
+        return f"HTTP {resp.status_code}: {payload}"
+
+    message = err.get("message", "Unknown Meta error")
+    code = err.get("code")
+    subcode = err.get("error_subcode")
+    fbtrace = err.get("fbtrace_id")
+    parts = [f"HTTP {resp.status_code}", message]
+    if code is not None:
+        parts.append(f"code={code}")
+    if subcode is not None:
+        parts.append(f"subcode={subcode}")
+    if fbtrace:
+        parts.append(f"fbtrace_id={fbtrace}")
+    return " | ".join(parts)
+
+
+def _graph_post(path: str, data: dict, *, timeout: int = 30) -> dict:
+    resp = requests.post(f"{GRAPH_API_BASE}/{path.lstrip('/')}", data=data, timeout=timeout)
+    if not resp.ok:
+        raise RuntimeError(f"Meta POST {path} failed: {_meta_error_text(resp)}")
+    return resp.json()
+
+
+def _graph_get(path: str, params: dict, *, timeout: int = 30) -> dict:
+    resp = requests.get(f"{GRAPH_API_BASE}/{path.lstrip('/')}", params=params, timeout=timeout)
+    if not resp.ok:
+        raise RuntimeError(f"Meta GET {path} failed: {_meta_error_text(resp)}")
+    return resp.json()
+
+
 def _create_carousel_item(image_url: str) -> str:
     """Create a single carousel item container. Returns the container ID."""
-    resp = requests.post(
-        f"{GRAPH_API_BASE}/{INSTAGRAM_ACCOUNT_ID}/media",
+    payload = _graph_post(
+        f"{INSTAGRAM_ACCOUNT_ID}/media",
         data={
             "image_url": image_url,
             "is_carousel_item": "true",
             "access_token": META_ACCESS_TOKEN,
         },
-        timeout=30,
     )
-    resp.raise_for_status()
-    container_id = resp.json()["id"]
+    container_id = payload["id"]
     logger.debug(f"Created carousel item: {container_id}")
     return container_id
 
 
 def _create_carousel_container(item_ids: list[str], caption: str) -> str:
     """Create the carousel container with all items. Returns the container ID."""
-    resp = requests.post(
-        f"{GRAPH_API_BASE}/{INSTAGRAM_ACCOUNT_ID}/media",
+    payload = _graph_post(
+        f"{INSTAGRAM_ACCOUNT_ID}/media",
         data={
             "media_type": "CAROUSEL",
             "children": ",".join(item_ids),
             "caption": caption,
             "access_token": META_ACCESS_TOKEN,
         },
-        timeout=30,
     )
-    resp.raise_for_status()
-    container_id = resp.json()["id"]
+    container_id = payload["id"]
     logger.info(f"Created carousel container: {container_id}")
     return container_id
 
@@ -102,31 +260,25 @@ def _create_carousel_container(item_ids: list[str], caption: str) -> str:
 def _publish_container(container_id: str) -> str:
     """Publish a media container. Returns the published media ID."""
     # Wait for container to be ready
-    for attempt in range(10):
-        status_resp = requests.get(
-            f"{GRAPH_API_BASE}/{container_id}",
-            params={
-                "fields": "status_code",
-                "access_token": META_ACCESS_TOKEN,
-            },
+    for attempt in range(12):
+        status_payload = _graph_get(
+            container_id,
+            params={"fields": "status_code,status", "access_token": META_ACCESS_TOKEN},
             timeout=15,
         )
-        status = status_resp.json().get("status_code")
+        status = status_payload.get("status_code")
         if status == "FINISHED":
             break
+        if status in {"ERROR", "EXPIRED"}:
+            raise RuntimeError(f"Container {container_id} failed with status={status}")
         logger.info(f"Container status: {status}, waiting... (attempt {attempt + 1})")
         time.sleep(5)
 
-    resp = requests.post(
-        f"{GRAPH_API_BASE}/{INSTAGRAM_ACCOUNT_ID}/media_publish",
-        data={
-            "creation_id": container_id,
-            "access_token": META_ACCESS_TOKEN,
-        },
-        timeout=30,
+    payload = _graph_post(
+        f"{INSTAGRAM_ACCOUNT_ID}/media_publish",
+        data={"creation_id": container_id, "access_token": META_ACCESS_TOKEN},
     )
-    resp.raise_for_status()
-    media_id = resp.json()["id"]
+    media_id = payload["id"]
     logger.info(f"Published! Media ID: {media_id}")
     return media_id
 
@@ -148,11 +300,19 @@ def publish(image_paths: list[Path], content: dict, strategy: dict) -> str:
             "META_ACCESS_TOKEN and INSTAGRAM_ACCOUNT_ID must be set. "
             "See .env.example for setup instructions."
         )
+    if not image_paths:
+        raise ValueError("No images to publish. image_paths is empty.")
+
+    logger.info(
+        "Instagram publish setup: graph=%s, image_host=%s",
+        GRAPH_API_BASE,
+        "PUBLIC_IMAGE_BASE_URL" if PUBLIC_IMAGE_BASE_URL else "IMGUR",
+    )
 
     full_caption = strategy.get("full_caption", content.get("caption", ""))
 
     # Step 1: Upload images to public hosting
-    logger.info("Step 1/3: Uploading images...")
+    logger.info("Step 1/3: Resolving public image URLs...")
     image_urls = upload_images(image_paths)
 
     # Step 2: Create carousel items
@@ -205,9 +365,9 @@ if __name__ == "__main__":
     print("PUBLISHER MODULE — Test Mode")
     print("=" * 60)
     print("\nThis module requires:")
-    print("  1. IMGUR_CLIENT_ID — for image hosting")
-    print("  2. META_ACCESS_TOKEN — for Instagram Graph API")
-    print("  3. INSTAGRAM_ACCOUNT_ID — your IG business account ID")
+    print("  1. META_ACCESS_TOKEN — for Instagram Graph API")
+    print("  2. INSTAGRAM_ACCOUNT_ID — your IG business account ID")
+    print("  3. PUBLIC_IMAGE_BASE_URL (recommended) OR IMGUR_CLIENT_ID")
     print("\nSet these in .env and run with real images to test.")
     print("\nTo test image upload only:")
     print("  python -c \"from modules.publisher import upload_images; ...\"")

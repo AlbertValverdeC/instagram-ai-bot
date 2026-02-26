@@ -23,6 +23,7 @@ for d in [OUTPUT_DIR, DATA_DIR, LOGS_DIR, PROMPTS_DIR]:
 # --- API Keys ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 NEWSAPI_KEY = os.getenv("NEWSAPI_KEY", "")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
 REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
 REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "instagram-ai-bot/1.0")
@@ -30,6 +31,8 @@ INSTAGRAM_ACCOUNT_ID = os.getenv("INSTAGRAM_ACCOUNT_ID", "")
 FACEBOOK_PAGE_ID = os.getenv("FACEBOOK_PAGE_ID", "")
 META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "")
 IMGUR_CLIENT_ID = os.getenv("IMGUR_CLIENT_ID", "")
+GRAPH_API_VERSION = (os.getenv("GRAPH_API_VERSION", "v25.0") or "v25.0").strip()
+PUBLIC_IMAGE_BASE_URL = os.getenv("PUBLIC_IMAGE_BASE_URL", "").strip().rstrip("/")
 
 # --- Instagram ---
 INSTAGRAM_HANDLE = os.getenv("INSTAGRAM_HANDLE", "@tu_cuenta_tech")
@@ -42,14 +45,23 @@ DIRECTOR_MODEL = os.getenv("DIRECTOR_MODEL", "gpt-4o")
 
 # --- Google AI (Imagen) ---
 GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY", "")
-GOOGLE_IMAGE_MODEL = os.getenv("GOOGLE_IMAGE_MODEL", "imagen-4.0-generate-001")
+GOOGLE_IMAGE_MODEL = os.getenv("GOOGLE_IMAGE_MODEL", "gemini-2.5-flash-image")
 
 # --- Research ---
 RESEARCH_CONFIG_FILE = DATA_DIR / "research_config.json"
-NEWSAPI_DOMAINS = "techcrunch.com,theverge.com,arstechnica.com,wired.com"
+RESEARCH_BACKEND = os.getenv("RESEARCH_BACKEND", "auto").strip().lower()
+# Keep empty by default so focused topic search is not constrained to only tech outlets.
+NEWSAPI_DOMAINS = ""
 NEWSAPI_LANGUAGE = "en"
 REDDIT_SUBREDDITS = ["artificial", "technology", "MachineLearning", "ChatGPT"]
 RSS_FEEDS = [
+    # High-signal general news (Spain + global)
+    "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada",
+    "https://e00-elmundo.uecdn.es/elmundo/rss/portada.xml",
+    "https://www.eldiario.es/rss/",
+    "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+    # Tech-focused feeds
     "https://techcrunch.com/feed/",
     "https://www.theverge.com/rss/index.xml",
     "https://feeds.arstechnica.com/arstechnica/index",
@@ -70,6 +82,10 @@ MAX_WORDS_PER_SLIDE = 40
 # --- Profile Picture (for cover slide branding) ---
 _profile_pic = ASSETS_DIR / "profile.png"
 PROFILE_PIC_PATH = _profile_pic if _profile_pic.exists() else None
+
+# --- Brand Logo (small badge on slides) ---
+_brand_logo = ASSETS_DIR / "brand_logo.png"
+BRAND_LOGO_PATH = _brand_logo if _brand_logo.exists() else PROFILE_PIC_PATH
 
 # --- Logging ---
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"

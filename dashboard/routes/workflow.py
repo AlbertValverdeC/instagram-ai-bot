@@ -15,7 +15,7 @@ try:
     from modules.content_generator import generate_text_proposals
     from modules.engagement import get_strategy
     from modules.post_store import create_draft_post, ensure_schema as ensure_post_store_schema
-    from modules.researcher import find_trending_topic
+    from modules.researcher import find_trending_topic, find_trending_topics
 except Exception:
     create_slides = None
     generate_content = None
@@ -24,6 +24,7 @@ except Exception:
     create_draft_post = None
     ensure_post_store_schema = None
     find_trending_topic = None
+    find_trending_topics = None
 
 bp = Blueprint("workflow_routes", __name__)
 
@@ -48,6 +49,26 @@ def _safe_save_json(path, payload: dict | list):
         pass
 
 
+def _topic_to_proposal(topic: dict, idx: int) -> dict:
+    """Convert a topic dict into a proposal card for the frontend."""
+    title = topic.get("topic", "")
+    why = topic.get("why", "")
+    virality = topic.get("virality_score", 7)
+    key_points = topic.get("key_points", [])
+    # Build a short preview from the first 2 key points
+    preview_points = [str(kp) for kp in key_points[:2] if str(kp).strip()]
+    caption_preview = " ".join(preview_points)[:280] if preview_points else why[:280]
+
+    return {
+        "id": f"p{idx}",
+        "angle": title,
+        "hook": why or title,
+        "caption_preview": caption_preview,
+        "cta": "¿Qué opinas? Te leo en comentarios.",
+        "virality_score": virality,
+    }
+
+
 @bp.post("/api/proposals")
 def api_generate_proposals():
     auth_error = require_api_token()
@@ -56,8 +77,7 @@ def api_generate_proposals():
 
     deps_error = _require_modules(
         {
-            "find_trending_topic": find_trending_topic,
-            "generate_text_proposals": generate_text_proposals,
+            "find_trending_topics": find_trending_topics,
         }
     )
     if deps_error:
@@ -79,11 +99,24 @@ def api_generate_proposals():
         count = 3
 
     try:
-        topic_payload = find_trending_topic(focus_topic=focus_topic)
-        proposals = generate_text_proposals(topic_payload, count=count)
-        _safe_save_json(DATA_DIR / "last_topic.json", topic_payload)
+        # Get N different topics (each proposal = different story)
+        topics = find_trending_topics(focus_topic=focus_topic, count=count)
+
+        # Convert each topic to a proposal card
+        proposals = [_topic_to_proposal(t, i + 1) for i, t in enumerate(topics)]
+
+        # Save first topic as last_topic for dedup, all topics for reference
+        if topics:
+            _safe_save_json(DATA_DIR / "last_topic.json", topics[0])
         _safe_save_json(DATA_DIR / "last_proposals.json", proposals)
-        return jsonify({"topic": topic_payload, "proposals": proposals})
+        _safe_save_json(DATA_DIR / "last_topics.json", topics)
+
+        # Return the first topic as primary (for backwards compat) + all topics
+        return jsonify({
+            "topic": topics[0] if topics else {},
+            "topics": topics,
+            "proposals": proposals,
+        })
     except Exception as e:
         return jsonify({"error": f"No se pudieron generar propuestas: {e}"}), 500
 

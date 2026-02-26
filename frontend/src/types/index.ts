@@ -52,6 +52,7 @@ export interface RunResponse {
 
 export interface ProposalsResponse {
   topic: TopicPayload;
+  topics?: TopicPayload[];
   proposals: TextProposal[];
 }
 

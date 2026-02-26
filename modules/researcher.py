@@ -1875,6 +1875,24 @@ def fetch_google_trends(focus_topic: str | None = None) -> list[str]:
 
 # ── Topic Ranking with OpenAI ───────────────────────────────────────────────
 
+def _prepare_article_summaries(articles: list[dict], limit: int = 40) -> str:
+    """Prepare condensed article summaries with scoring for the LLM."""
+    summaries = []
+    for i, a in enumerate(articles[:limit]):
+        published_dt = _parse_published_datetime(a.get("published", ""))
+        published_label = published_dt.strftime("%Y-%m-%d") if published_dt else "unknown-date"
+        hot_score = a.get("hot_score")
+        score_label = f"{hot_score:.2f}" if isinstance(hot_score, (int, float)) else "n/a"
+        consensus = a.get("consensus_score")
+        consensus_label = f"{consensus:.1f}" if isinstance(consensus, (int, float)) else "0"
+        domain = a.get("domain") or _extract_domain(a.get("url", ""))
+        summaries.append(
+            f"{i+1}. [{a['source']} | {domain} | {published_label} | hot={score_label} | consensus={consensus_label}] {a['title']}"
+            + (f" — {a['description'][:150]}" if a.get("description") else "")
+        )
+    return "\n".join(summaries)
+
+
 def rank_topics(
     articles: list[dict],
     trends: list[str],
@@ -1887,20 +1905,7 @@ def rank_topics(
 
     focus_topic = _normalize_focus_topic(focus_topic)
 
-    # Prepare a condensed list for the LLM
-    article_summaries = []
-    for i, a in enumerate(articles[:40]):  # limit to 40 for token efficiency
-        published_dt = _parse_published_datetime(a.get("published", ""))
-        published_label = published_dt.strftime("%Y-%m-%d") if published_dt else "unknown-date"
-        hot_score = a.get("hot_score")
-        score_label = f"{hot_score:.2f}" if isinstance(hot_score, (int, float)) else "n/a"
-        domain = a.get("domain") or _extract_domain(a.get("url", ""))
-        article_summaries.append(
-            f"{i+1}. [{a['source']} | {domain} | {published_label} | hot={score_label}] {a['title']}"
-            + (f" — {a['description'][:150]}" if a.get("description") else "")
-        )
-
-    articles_text = "\n".join(article_summaries)
+    articles_text = _prepare_article_summaries(articles)
     trends_text = ", ".join(trends) if trends else "No Google Trends data available"
     past_text = ", ".join(list(past_topics)[:20]) if past_topics else "None"
 
@@ -2019,6 +2024,140 @@ def rank_topics(
 
     logger.info(f"Selected topic: {result['topic']} (virality: {result.get('virality_score', '?')})")
     return result
+
+
+_MULTI_TOPIC_PROMPT = """Eres estratega de contenido para una cuenta de Instagram en español sobre Tech e IA.
+
+La marca es "TechTokio ⚡ 30s": radar diario de tecnología con aura Neo-Tokio.
+
+Analiza los artículos y selecciona los {count} MEJORES temas DIFERENTES para posibles carruseles.
+
+REGLAS IMPORTANTES:
+1. Cada tema debe ser sobre una HISTORIA DIFERENTE (no variaciones del mismo tema).
+2. Prioriza artículos con consensus alto (consensus > 0 = aparece en múltiples fuentes = más fiable y relevante).
+3. Artículos con consensus=0 son de una sola fuente: úsalos solo si no hay alternativas mejores.
+4. No repetir temas pasados.
+5. Cada tema debe ser claramente tech/IA/apps/gadgets.
+6. Respetar los datos de las fuentes: no inventar hechos.
+
+ARTÍCULOS (consensus = cuántas fuentes distintas lo cubren):
+{articles_text}
+
+GOOGLE TRENDS:
+{trends_text}
+
+TEMAS PASADOS (evitar):
+{past_text}
+
+Responde en este formato JSON exacto:
+{{
+    "topics": [
+        {{
+            "topic": "Título corto del tema en español (5-10 palabras)",
+            "topic_en": "Mismo tema en inglés",
+            "why": "Una frase explicando por qué este tema es bueno",
+            "key_points": [
+                "Punto 1: dato específico",
+                "Punto 2: dato específico",
+                "Punto 3: dato específico",
+                "Punto 4: dato específico",
+                "Punto 5: dato específico",
+                "Punto 6: dato específico"
+            ],
+            "source_urls": ["url1", "url2"],
+            "virality_score": 8
+        }}
+    ]
+}}
+
+IMPORTANTE: Devuelve EXACTAMENTE {count} temas, cada uno sobre una HISTORIA DIFERENTE."""
+
+
+def rank_multiple_topics(
+    articles: list[dict],
+    trends: list[str],
+    past_topics: set[str],
+    focus_topic: str | None = None,
+    count: int = 3,
+) -> list[dict]:
+    """Use OpenAI to select and summarize N different topics from articles."""
+    if not articles:
+        raise ValueError("No articles found from any source")
+
+    focus_topic = _normalize_focus_topic(focus_topic)
+    articles_text = _prepare_article_summaries(articles, limit=50)
+    trends_text = ", ".join(trends) if trends else "No Google Trends data available"
+    past_text = ", ".join(list(past_topics)[:20]) if past_topics else "None"
+
+    prompt = _MULTI_TOPIC_PROMPT.format(
+        count=count,
+        articles_text=articles_text,
+        trends_text=trends_text,
+        past_text=past_text,
+    )
+
+    if focus_topic:
+        prompt += (
+            f"\n\nFOCUS TOPIC (strict): {focus_topic}\n"
+            "All topics must be directly related to this focus topic but cover DIFFERENT angles/stories. "
+            "Do not invent facts that are not present in the provided article list."
+        )
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    if "json" not in prompt.lower():
+        prompt += "\n\nRespond in valid JSON format."
+    resp = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+        response_format={"type": "json_object"},
+    )
+    raw = json.loads(resp.choices[0].message.content)
+
+    raw_topics = raw.get("topics", [])
+    if not isinstance(raw_topics, list):
+        raw_topics = [raw] if isinstance(raw, dict) and "topic" in raw else []
+
+    results = []
+    for t in raw_topics[:count]:
+        if not isinstance(t, dict) or "topic" not in t:
+            continue
+
+        t["topic"] = _sanitize_research_text(t.get("topic", ""))
+        t["topic_en"] = _sanitize_research_text(t.get("topic_en", ""))
+        if "why" in t:
+            t["why"] = _sanitize_research_text(t.get("why", ""))
+        raw_points = t.get("key_points", [])
+        if not isinstance(raw_points, list):
+            raw_points = []
+        t["key_points"] = [_clarify_key_point(p) for p in raw_points][:6]
+
+        # Replace source URLs with verified ones
+        trusted_urls = _pick_source_urls(
+            articles,
+            selected_topic=t.get("topic", ""),
+            focus_topic=focus_topic,
+        )
+        if trusted_urls:
+            t["source_urls"] = trusted_urls
+
+        # Normalize virality score
+        raw_v = t.get("virality_score", 7)
+        try:
+            v = float(raw_v)
+        except (TypeError, ValueError):
+            v = 7.0
+        v = max(1.0, min(10.0, v))
+        t["virality_score"] = int(v) if abs(v - int(v)) < 1e-9 else round(v, 1)
+
+        results.append(t)
+
+    logger.info(f"Ranked {len(results)} different topics")
+    for i, t in enumerate(results, 1):
+        logger.info(f"  Topic {i}: {t['topic']} (virality: {t.get('virality_score', '?')})")
+
+    return results
 
 
 # ── Main Entry Point ────────────────────────────────────────────────────────
@@ -2324,6 +2463,174 @@ def find_trending_topic(focus_topic: str | None = None) -> dict:
             logger.warning("Tavily backend failed (%s). Falling back to legacy backend.", e)
             return _find_trending_topic_legacy(focus_topic=focus_topic)
     return _find_trending_topic_legacy(focus_topic=focus_topic)
+
+
+def find_trending_topics(
+    focus_topic: str | None = None,
+    count: int = 3,
+) -> list[dict]:
+    """
+    Find N different trending topics for proposal selection.
+
+    Uses the same research pipeline as find_trending_topic() but asks the LLM
+    to select multiple distinct topics instead of just one.
+    Returns a list of topic dicts, each with: topic, topic_en, why, key_points,
+    source_urls, virality_score.
+    """
+    count = max(1, min(count, 5))
+    focus_topic_norm = _normalize_focus_topic(focus_topic)
+    backend = _resolve_research_backend()
+    logger.info(f"Finding {count} trending topics (backend: {backend})")
+
+    past_topics = _get_past_topics()
+    recently_proposed = _get_recently_proposed_topics()
+    if recently_proposed:
+        past_topics = past_topics | recently_proposed
+
+    # Use the Tavily research path to gather articles
+    try:
+        if backend == "tavily":
+            articles, trends = _fetch_tavily_research(focus_topic_norm)
+        else:
+            articles, trends = _fetch_legacy_research(focus_topic_norm)
+    except Exception as e:
+        logger.warning(f"Research fetch failed ({backend}): {e}")
+        if backend == "tavily":
+            articles, trends = _fetch_legacy_research(focus_topic_norm)
+        else:
+            raise
+
+    if not articles:
+        raise RuntimeError("No articles fetched from any source. Check API keys and network.")
+
+    return rank_multiple_topics(
+        articles, trends, past_topics,
+        focus_topic=focus_topic_norm,
+        count=count,
+    )
+
+
+def _fetch_tavily_research(focus_topic: str | None) -> tuple[list[dict], list[str]]:
+    """Fetch and process articles via Tavily backend. Returns (articles, trends)."""
+    all_articles = []
+    trends = []
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {
+            executor.submit(fetch_tavily_news, focus_topic, None): "tavily",
+            executor.submit(fetch_google_trends, focus_topic): "trends",
+            executor.submit(fetch_google_news_sections, focus_topic): "google_news_sections",
+            executor.submit(fetch_newsapi, focus_topic): "newsapi",
+        }
+        for future in as_completed(futures):
+            source = futures[future]
+            try:
+                result = future.result()
+                if source == "trends":
+                    trends = result
+                else:
+                    all_articles.extend(result)
+            except Exception as e:
+                logger.error(f"Error fetching {source}: {e}")
+
+    # Trend-based expansion
+    if trends and focus_topic:
+        try:
+            expanded = fetch_google_news_rss(focus_topic, query_hints=trends[:15])
+            if expanded:
+                all_articles.extend(expanded)
+        except Exception:
+            pass
+    elif trends:
+        for trend in trends[:5]:
+            try:
+                expanded = fetch_google_news_rss(trend)
+                if expanded:
+                    all_articles.extend(expanded)
+            except Exception:
+                pass
+
+    return _process_articles(all_articles, trends, focus_topic)
+
+
+def _fetch_legacy_research(focus_topic: str | None) -> tuple[list[dict], list[str]]:
+    """Fetch and process articles via legacy backend. Returns (articles, trends)."""
+    all_articles = []
+    trends = []
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {
+            executor.submit(fetch_newsapi, focus_topic): "newsapi",
+            executor.submit(fetch_rss, focus_topic): "rss",
+            executor.submit(fetch_google_news_rss, focus_topic): "google_news_rss",
+            executor.submit(fetch_google_news_sections, focus_topic): "google_news_sections",
+            executor.submit(fetch_bing_news_rss, focus_topic): "bing_news_rss",
+            executor.submit(fetch_reddit, focus_topic): "reddit",
+            executor.submit(fetch_hackernews, focus_topic): "hackernews",
+            executor.submit(fetch_google_trends, focus_topic): "trends",
+        }
+        for future in as_completed(futures):
+            source = futures[future]
+            try:
+                result = future.result()
+                if source == "trends":
+                    trends = result
+                else:
+                    all_articles.extend(result)
+            except Exception as e:
+                logger.error(f"Error fetching {source}: {e}")
+
+    if focus_topic and trends:
+        expanded_google = fetch_google_news_rss(focus_topic, query_hints=trends[:15])
+        expanded_bing = fetch_bing_news_rss(focus_topic, query_hints=trends[:15])
+        all_articles.extend(expanded_google)
+        all_articles.extend(expanded_bing)
+
+    return _process_articles(all_articles, trends, focus_topic)
+
+
+def _process_articles(
+    all_articles: list[dict],
+    trends: list[str],
+    focus_topic: str | None,
+) -> tuple[list[dict], list[str]]:
+    """Shared article processing: dedupe, filter, prioritize."""
+    all_articles = _dedupe_articles(all_articles)
+    all_articles = _strict_focus_filter(all_articles, focus_topic)
+    if not focus_topic:
+        config = _load_research_config()
+        all_articles = _filter_generic_tech_articles(
+            all_articles,
+            tech_keywords=list(config.get("trends_keywords", [])),
+        )
+    logger.info(f"Total unique articles fetched: {len(all_articles)}, trends: {len(trends)}")
+
+    filtered = _filter_recent_articles(all_articles, max_age_days=MAX_ARTICLE_AGE_DAYS)
+    if filtered:
+        all_articles = filtered
+    elif all_articles:
+        all_articles = sorted(
+            all_articles,
+            key=lambda a: (_parse_published_datetime(a.get("published", "")) or datetime.min.replace(tzinfo=timezone.utc)),
+            reverse=True,
+        )[:MIN_RECENT_ARTICLES]
+
+    all_articles = _filter_focus_freshness(
+        all_articles, focus_topic=focus_topic,
+        max_age_days=MAX_FOCUS_ARTICLE_AGE_DAYS,
+        min_keep=MIN_FOCUS_FRESH_ARTICLES,
+    )
+    all_articles = _filter_low_trust_focus_articles(
+        all_articles, focus_topic=focus_topic, min_trust_score=0.0,
+    )
+    all_articles = _prioritize_articles(
+        all_articles, trends=trends, focus_topic=focus_topic,
+        limit=60, max_per_domain=4,
+    )
+    _log_top_articles(all_articles, top_n=10)
+    logger.info(f"Articles passed to ranking: {len(all_articles)}")
+
+    return all_articles, trends
 
 
 # ── CLI Test Mode ────────────────────────────────────────────────────────────

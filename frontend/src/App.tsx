@@ -54,6 +54,7 @@ export default function App() {
   });
   const [slidesCacheBust, setSlidesCacheBust] = useState(Date.now());
   const [proposals, setProposals] = useState<TextProposal[]>([]);
+  const [proposalTopics, setProposalTopics] = useState<Record<string, unknown>[]>([]);
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
   const [generatingProposals, setGeneratingProposals] = useState(false);
   const [creatingDraft, setCreatingDraft] = useState(false);
@@ -228,8 +229,10 @@ export default function App() {
       const topic = topicInput.trim();
       const data = await apiClient.generateProposals({ topic: topic || undefined, count: 3 });
       const nextProposals = Array.isArray(data.proposals) ? data.proposals : [];
+      const nextTopics = Array.isArray(data.topics) ? data.topics : (data.topic ? [data.topic] : []);
       setDashboardState((prev) => ({ ...prev, topic: data.topic }));
       setProposals(nextProposals);
+      setProposalTopics(nextTopics as Record<string, unknown>[]);
       setSelectedProposalId(nextProposals.length > 0 ? String(nextProposals[0].id || 'p1') : null);
       setSyncMessage(`Nivel 1 completado: ${nextProposals.length} propuestas generadas.`);
       setSyncColor('green');
@@ -247,18 +250,22 @@ export default function App() {
       window.alert('Primero genera propuestas (Nivel 1).');
       return;
     }
-    const selected = proposals.find((p) => String(p.id) === selectedProposalId);
+    const selectedIndex = proposals.findIndex((p) => String(p.id) === selectedProposalId);
+    const selected = selectedIndex >= 0 ? proposals[selectedIndex] : undefined;
     if (!selected) {
       window.alert('Selecciona una propuesta.');
       return;
     }
+
+    // Use the corresponding topic for this proposal (each proposal = different topic)
+    const matchingTopic = (proposalTopics[selectedIndex] || dashboardState.topic) as Record<string, unknown>;
 
     setCreatingDraft(true);
     setSyncMessage('Nivel 2 en ejecución: creando draft y slides...');
     setSyncColor('dim');
     try {
       const data = await apiClient.createDraft({
-        topic: dashboardState.topic as Record<string, unknown>,
+        topic: matchingTopic,
         proposal: selected,
         template: selectedTemplate ?? undefined
       });
@@ -278,7 +285,7 @@ export default function App() {
     } finally {
       setCreatingDraft(false);
     }
-  }, [dashboardState.topic, proposals, selectedProposalId, selectedTemplate, loadPosts]);
+  }, [dashboardState.topic, proposals, proposalTopics, selectedProposalId, selectedTemplate, loadPosts]);
 
   const syncNow = useCallback(async () => {
     setSyncing(true);

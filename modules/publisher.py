@@ -301,8 +301,8 @@ def _is_meta_transient_error(resp: requests.Response) -> bool:
     if code in retryable_codes:
         return True
 
-    # Seen in live runs right after rate-limit responses.
-    retryable_subcodes = {2207051, 2207085}
+    # Seen in live runs right after rate-limit responses + known transient subcodes.
+    retryable_subcodes = {2207001, 2207003, 2207027, 2207032, 2207051, 2207085}
     if subcode in retryable_subcodes:
         return True
 
@@ -774,7 +774,10 @@ def publish(image_paths: list[Path], content: dict, strategy: dict) -> str:
                 sleep_seconds=2.0,
             )
             item_ids.append(item_id)
-            time.sleep(1)
+            time.sleep(2.5)  # Give Meta more processing time between items
+
+        # Wait extra before creating parent container to let items settle
+        time.sleep(5)
 
         # Step 3: Create and publish carousel
         logger.info("Step 3/3: Publishing carousel...")

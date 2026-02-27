@@ -30,40 +30,43 @@ export function Controls({
     <section className="mb-6 flex flex-col gap-6 rounded-xl border border-border-dark bg-secondary-dark p-4 xl:flex-row xl:items-center xl:justify-between">
       <div className="flex flex-wrap items-center gap-3">
         {/* Mode buttons */}
-        <div className="flex rounded-lg border border-border-dark bg-surface-dark p-1">
+        <div className="flex flex-wrap rounded-lg border border-border-dark bg-surface-dark p-1">
           <button
             type="button"
             disabled={running}
+            data-loading={running ? "true" : undefined}
             onClick={() => onRun("test")}
             title="Usa datos de ejemplo (sin llamadas a APIs). Ideal para probar el diseño visual sin gastar créditos."
-            className="rounded-md px-4 py-2 text-sm font-medium text-text-subtle transition-colors hover:bg-border-dark hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-md px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-border-dark hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             Test Mode
           </button>
           <button
             type="button"
             disabled={running}
+            data-loading={running ? "true" : undefined}
             onClick={() => onRun("dry-run")}
             title="Ejecuta el pipeline completo con APIs reales, pero NO publica en Instagram."
-            className="rounded-md px-4 py-2 text-sm font-medium text-text-subtle transition-colors hover:bg-border-dark hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-md px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-border-dark hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             Dry Run
           </button>
           <button
             type="button"
             disabled={running}
+            data-loading={running ? "true" : undefined}
             onClick={() => onRun("live")}
-            title="Nivel 4: flujo end-to-end completo (research + contenido + diseño + publicación real en Instagram)."
-            className="rounded-md border border-red-500/50 bg-red-500/10 px-4 py-2 text-sm font-bold text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.2)] disabled:cursor-not-allowed disabled:opacity-40"
+            title="Flujo end-to-end completo (research + contenido + diseño + publicación real en Instagram)."
+            className="btn-danger rounded-md px-4 py-2 text-sm"
           >
-            Nivel 4 · E2E Live
+            E2E Live
           </button>
         </div>
 
         <div className="hidden h-8 w-px bg-border-dark sm:block" />
 
         {/* Topic input */}
-        <div className="flex min-w-[300px] flex-1 items-center gap-3">
+        <div className="flex w-full min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center">
           <div className="group relative flex-1">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-text-subtle transition-colors group-focus-within:text-primary">
               <span className="material-symbols-outlined">search</span>
@@ -84,8 +87,9 @@ export function Controls({
           <button
             type="button"
             disabled={running}
+            data-loading={running ? "true" : undefined}
             onClick={onSearchTopic}
-            className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-background-dark transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="btn-primary w-full px-5 py-2.5 sm:w-auto"
           >
             <span className="material-symbols-outlined text-[18px]">auto_awesome</span>
             Solo Research

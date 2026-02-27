@@ -17,7 +17,7 @@ function riskLabelClass(risk?: string): string {
     case "medio":
       return "rounded-full border border-yellow-400/40 bg-yellow-400/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-yellow-400";
     default:
-      return "rounded-full border border-dim/40 bg-dim/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-dim";
+      return "rounded-full border border-text-subtle/40 bg-text-subtle/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-text-subtle";
   }
 }
 
@@ -25,6 +25,7 @@ export function PromptsModal({ open, onClose }: PromptsModalProps) {
   const [prompts, setPrompts] = useState<PromptItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [busyById, setBusyById] = useState<Record<string, boolean>>({});
   const [messageById, setMessageById] = useState<
     Record<string, { text: string; type: "ok" | "err" }>
   >({});
@@ -73,6 +74,7 @@ export function PromptsModal({ open, onClose }: PromptsModalProps) {
 
   const savePrompt = async (id: string) => {
     const text = draft[id] ?? "";
+    setBusyById((prev) => ({ ...prev, [id]: true }));
     try {
       await apiClient.savePrompt(id, text);
       showMessage(id, "Guardado correctamente", "ok");
@@ -81,6 +83,8 @@ export function PromptsModal({ open, onClose }: PromptsModalProps) {
     } catch (error) {
       const err = error as Error;
       showMessage(id, err.message || "Error al guardar", "err");
+    } finally {
+      setBusyById((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -93,6 +97,7 @@ export function PromptsModal({ open, onClose }: PromptsModalProps) {
       return;
     }
 
+    setBusyById((prev) => ({ ...prev, [id]: true }));
     try {
       await apiClient.resetPrompt(id);
       showMessage(id, "Restaurado al original", "ok");
@@ -106,6 +111,8 @@ export function PromptsModal({ open, onClose }: PromptsModalProps) {
     } catch (error) {
       const err = error as Error;
       showMessage(id, err.message || "Error al restaurar", "err");
+    } finally {
+      setBusyById((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -119,21 +126,21 @@ export function PromptsModal({ open, onClose }: PromptsModalProps) {
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-[900px] max-w-[95vw] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl"
+        className="max-h-[90vh] w-[900px] max-w-[95vw] overflow-y-auto rounded-xl border border-border-dark bg-secondary-dark shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-6 py-5">
-          <h2 className="text-lg font-bold">✏️ Editor de Prompts</h2>
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-dark bg-secondary-dark px-6 py-5">
+          <h2 className="font-display text-lg font-bold">✏️ Editor de Prompts</h2>
           <button
             type="button"
             onClick={onClose}
-            className="text-2xl text-dim transition hover:text-text"
+            className="text-2xl text-text-subtle transition hover:text-white"
           >
             ×
           </button>
         </div>
 
-        <div className="sticky top-[69px] z-10 flex border-b border-border bg-card px-6">
+        <div className="sticky top-[69px] z-10 flex border-b border-border-dark bg-secondary-dark px-6">
           {categories.map((category) => (
             <button
               key={category}
@@ -141,8 +148,8 @@ export function PromptsModal({ open, onClose }: PromptsModalProps) {
               onClick={() => setActiveCategory(category)}
               className={`border-b-2 px-4 py-3 text-sm font-semibold transition ${
                 category === activeCategory
-                  ? "border-accent text-accent"
-                  : "border-transparent text-dim hover:text-text"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-text-subtle hover:text-white"
               }`}
             >
               {category}
@@ -151,7 +158,7 @@ export function PromptsModal({ open, onClose }: PromptsModalProps) {
         </div>
 
         <div className="px-6 py-5">
-          <div className="mb-4 rounded-lg border border-accent/20 bg-accent/5 p-3 text-xs text-dim">
+          <div className="mb-4 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-text-subtle">
             Este panel cambia el comportamiento real del pipeline. Antes de editar, revisa{" "}
             <b>Qué hace</b>, <b>Cuándo se usa</b> y <b>Si lo cambias</b>. Las llaves dobles{" "}
             <code>{"{{ }}"}</code> son literales. Las llaves simples <code>{"{variable}"}</code> se
@@ -160,8 +167,12 @@ export function PromptsModal({ open, onClose }: PromptsModalProps) {
 
           {visiblePrompts.map((prompt) => {
             const msg = messageById[prompt.id];
+            const busy = Boolean(busyById[prompt.id]);
             return (
-              <article key={prompt.id} className="mb-4 rounded-xl border border-border bg-code p-4">
+              <article
+                key={prompt.id}
+                className="mb-4 rounded-xl border border-border-dark bg-surface-dark p-4"
+              >
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-bold">{prompt.name}</h3>
                   <span
@@ -178,26 +189,26 @@ export function PromptsModal({ open, onClose }: PromptsModalProps) {
                       Personalizado
                     </span>
                   ) : null}
-                  <span className="text-xs text-dim">{prompt.module}</span>
+                  <span className="text-xs text-text-subtle">{prompt.module}</span>
                 </div>
 
-                <p className="mb-3 text-xs text-dim">{prompt.description}</p>
+                <p className="mb-3 text-xs text-text-subtle">{prompt.description}</p>
 
-                <div className="mb-3 space-y-1 rounded-lg border border-border bg-white/5 p-3 text-xs text-text">
+                <div className="mb-3 space-y-1 rounded-lg border border-border-dark bg-white/5 p-3 text-xs text-slate-100">
                   <p>
-                    <span className="font-bold text-accent">Qué hace:</span>{" "}
+                    <span className="font-bold text-primary">Qué hace:</span>{" "}
                     {prompt.what_it_does || "Sin descripción"}
                   </p>
                   <p>
-                    <span className="font-bold text-accent">Cuándo se usa:</span>{" "}
+                    <span className="font-bold text-primary">Cuándo se usa:</span>{" "}
                     {prompt.when_it_runs || "Sin descripción"}
                   </p>
                   <p>
-                    <span className="font-bold text-accent">Si lo cambias:</span>{" "}
+                    <span className="font-bold text-primary">Si lo cambias:</span>{" "}
                     {prompt.if_you_change_it || "Sin descripción"}
                   </p>
                   <p>
-                    <span className="font-bold text-accent">Riesgo al tocarlo:</span>{" "}
+                    <span className="font-bold text-primary">Riesgo al tocarlo:</span>{" "}
                     <span className={riskLabelClass(prompt.risk_level)}>
                       {prompt.risk_level || "no definido"}
                     </span>
@@ -209,7 +220,7 @@ export function PromptsModal({ open, onClose }: PromptsModalProps) {
                     {prompt.variables.map((variable) => (
                       <span
                         key={variable}
-                        className="rounded-md border border-accent/30 bg-accent/15 px-2 py-1 font-mono text-[11px] text-accent"
+                        className="rounded-md border border-primary/30 bg-primary/15 px-2 py-1 font-mono text-[11px] text-primary"
                       >
                         {`{${variable}}`}
                       </span>
@@ -220,7 +231,8 @@ export function PromptsModal({ open, onClose }: PromptsModalProps) {
                 <textarea
                   value={draft[prompt.id] ?? ""}
                   onChange={(e) => setDraft((prev) => ({ ...prev, [prompt.id]: e.target.value }))}
-                  className="min-h-[180px] w-full resize-y rounded-lg border border-border bg-bg p-3 font-mono text-xs leading-relaxed text-text outline-none focus:border-accent"
+                  disabled={busy}
+                  className="min-h-[180px] w-full resize-y rounded-lg border border-border-dark bg-background-dark p-3 font-mono text-xs leading-relaxed text-slate-100 outline-none focus:ring-1 focus:ring-primary focus:border-primary"
                   spellCheck={false}
                 />
 
@@ -228,17 +240,20 @@ export function PromptsModal({ open, onClose }: PromptsModalProps) {
                   <button
                     type="button"
                     onClick={() => savePrompt(prompt.id)}
-                    className="rounded-md border border-green bg-green/10 px-3 py-1.5 text-xs font-semibold text-green transition hover:bg-green/20"
+                    disabled={busy}
+                    data-loading={busy ? "true" : undefined}
+                    className="btn-success px-3 py-1.5 text-xs"
                   >
-                    💾 Guardar
+                    {busy ? "Guardando..." : "💾 Guardar"}
                   </button>
                   <button
                     type="button"
                     onClick={() => resetPrompt(prompt.id)}
-                    disabled={!prompt.custom}
-                    className="rounded-md border border-border bg-bg px-3 py-1.5 text-xs font-semibold text-text transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={!prompt.custom || busy}
+                    data-loading={busy ? "true" : undefined}
+                    className="btn-ghost px-3 py-1.5 text-xs"
                   >
-                    ↩️ Restaurar Original
+                    {busy ? "Procesando..." : "↩️ Restaurar Original"}
                   </button>
                   <span
                     className={`ml-auto text-xs ${msg?.type === "ok" ? "text-green" : "text-red"}`}

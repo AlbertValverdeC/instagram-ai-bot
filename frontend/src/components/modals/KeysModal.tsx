@@ -11,6 +11,7 @@ interface KeysModalProps {
 export function KeysModal({ open, onClose }: KeysModalProps) {
   const [items, setItems] = useState<ApiKeyItem[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{
     text: string;
     color: "green" | "red" | "orange";
@@ -61,6 +62,7 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
     }
 
     try {
+      setSaving(true);
       const result = await apiClient.saveKeys(payload);
       setMessage({ text: `Guardado: ${result.saved} clave(s) actualizadas`, color: "green" });
       const data = await apiClient.getKeys();
@@ -72,6 +74,8 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
       setDraft(values);
     } catch {
       setMessage({ text: "Error al guardar", color: "red" });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -85,15 +89,15 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-[700px] max-w-[95vw] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl"
+        className="max-h-[90vh] w-[700px] max-w-[95vw] overflow-y-auto rounded-xl border border-border-dark bg-secondary-dark shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 flex items-center justify-between border-b border-border bg-card px-6 py-5">
-          <h2 className="text-lg font-bold">🔑 API Keys</h2>
+        <div className="sticky top-0 flex items-center justify-between border-b border-border-dark bg-secondary-dark px-6 py-5">
+          <h2 className="font-display text-lg font-bold">🔑 API Keys</h2>
           <button
             type="button"
             onClick={onClose}
-            className="text-2xl text-dim transition hover:text-text"
+            className="text-2xl text-text-subtle transition hover:text-white"
           >
             ×
           </button>
@@ -101,11 +105,11 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
 
         <div className="px-6 py-5">
           {grouped.length === 0 ? (
-            <p className="text-sm italic text-dim">Cargando...</p>
+            <p className="text-sm italic text-text-subtle">Cargando...</p>
           ) : (
             grouped.map(([group, groupItems]) => (
               <div key={group} className="mb-5">
-                <h3 className="mb-2 border-b border-border pb-1 text-[11px] font-bold uppercase tracking-[1px] text-accent">
+                <h3 className="mb-2 border-b border-border-dark pb-1 text-[11px] font-bold uppercase tracking-[1px] text-primary">
                   {group}
                 </h3>
                 <div className="space-y-4">
@@ -114,7 +118,11 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
                       <div className="mb-1 flex items-center gap-2 text-sm font-semibold">
                         <span
                           className={`inline-block h-1.5 w-1.5 rounded-full ${
-                            item.configured ? "bg-green" : item.required ? "bg-red" : "bg-dim"
+                            item.configured
+                              ? "bg-green"
+                              : item.required
+                                ? "bg-red"
+                                : "bg-text-subtle"
                           }`}
                         />
                         <span>{item.label}</span>
@@ -126,13 +134,13 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
                             href={item.url}
                             target="_blank"
                             rel="noreferrer"
-                            className="ml-auto text-xs text-accent/80 underline-offset-2 hover:underline"
+                            className="ml-auto text-xs text-primary/80 underline-offset-2 hover:underline"
                           >
                             Obtener →
                           </a>
                         ) : null}
                       </div>
-                      <p className="mb-1 text-xs text-dim">{item.hint}</p>
+                      <p className="mb-1 text-xs text-text-subtle">{item.hint}</p>
                       <input
                         type={item.secret ? "password" : "text"}
                         placeholder={item.configured && item.secret ? item.value : item.placeholder}
@@ -140,7 +148,7 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
                         onChange={(e) =>
                           setDraft((prev) => ({ ...prev, [item.key]: e.target.value }))
                         }
-                        className="w-full rounded-md border border-border bg-code px-3 py-2 font-mono text-xs text-text outline-none focus:border-accent"
+                        className="w-full rounded-md border border-border-dark bg-surface-dark px-3 py-2 font-mono text-xs text-slate-100 outline-none focus:border-primary"
                       />
                     </div>
                   ))}
@@ -150,7 +158,7 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
           )}
         </div>
 
-        <div className="sticky bottom-0 flex items-center justify-between border-t border-border bg-card px-6 py-4">
+        <div className="sticky bottom-0 flex items-center justify-between border-t border-border-dark bg-secondary-dark px-6 py-4">
           <span
             className={`text-sm ${
               message?.color === "green"
@@ -165,9 +173,11 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
           <button
             type="button"
             onClick={save}
-            className="rounded-lg border border-green bg-green/10 px-4 py-2 text-sm font-semibold text-green transition hover:bg-green/20"
+            disabled={saving}
+            data-loading={saving ? "true" : undefined}
+            className="btn-success px-4 py-2"
           >
-            💾 Guardar en .env
+            {saving ? "Guardando..." : "💾 Guardar en .env"}
           </button>
         </div>
       </div>

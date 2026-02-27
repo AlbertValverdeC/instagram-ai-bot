@@ -2,6 +2,7 @@ export interface DaySchedule {
   enabled: boolean;
   time: string | null;
   posts_per_day: number;
+  times: string[];
 }
 
 export interface SchedulerConfig {
@@ -16,6 +17,8 @@ export interface QueueItem {
   topic: string | null;
   template: number | null;
   status: "pending" | "processing" | "completed" | "error" | "skipped";
+  runs_total: number;
+  runs_completed: number;
   post_id: number | null;
   result_message: string | null;
   created_at: string;

@@ -35,9 +35,20 @@ META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "")
 IMGUR_CLIENT_ID = os.getenv("IMGUR_CLIENT_ID", "")
 GRAPH_API_VERSION = (os.getenv("GRAPH_API_VERSION", "v22.0") or "v22.0").strip()
 PUBLIC_IMAGE_BASE_URL = os.getenv("PUBLIC_IMAGE_BASE_URL", "").strip().rstrip("/")
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
 DUPLICATE_TOPIC_WINDOW_DAYS = int(os.getenv("DUPLICATE_TOPIC_WINDOW_DAYS", "90"))
 IS_CLOUD_RUN = bool(os.getenv("K_SERVICE"))
+
+_default_sqlite_url = f"sqlite:///{DEFAULT_DB_PATH}"
+_raw_database_url = os.getenv("DATABASE_URL", _default_sqlite_url).strip() or _default_sqlite_url
+# Local dashboard should not try to use Cloud Run Cloud SQL unix socket URLs.
+if not IS_CLOUD_RUN and "host=/cloudsql/" in _raw_database_url:
+    print(
+        "WARNING: DATABASE_URL apunta a Cloud SQL socket (/cloudsql) fuera de Cloud Run. "
+        f"Usando SQLite local ({_default_sqlite_url})."
+    )
+    DATABASE_URL = _default_sqlite_url
+else:
+    DATABASE_URL = _raw_database_url
 
 # --- Instagram ---
 INSTAGRAM_HANDLE = os.getenv("INSTAGRAM_HANDLE", "@tu_cuenta_tech")

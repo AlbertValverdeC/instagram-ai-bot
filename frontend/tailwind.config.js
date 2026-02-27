@@ -11,21 +11,30 @@ export default {
         'surface-dark': '#1c2630',
         'border-dark': '#2a3642',
         'text-subtle': '#94a3b8',
-        // Keep old aliases for modals that still use them
-        bg: '#0a0f1a',
-        card: '#131b24',
-        code: '#1c2630',
-        border: '#2a3642',
-        text: '#e2e8f0',
-        dim: '#94a3b8',
-        accent: '#00bfff',
+        // Instagram gradient palette
+        'ig-pink': '#E1306C',
+        'ig-purple': '#833AB4',
+        'ig-orange': '#F77737',
+        'ig-yellow': '#FCAF45',
         purple: '#c084fc',
         green: '#34d399',
         orange: '#fb923c',
         red: '#f87171',
       },
       fontFamily: {
-        display: ['Inter', 'sans-serif'],
+        display: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
+        body: ['Inter', 'sans-serif'],
+      },
+      backgroundImage: {
+        'ig-gradient': 'linear-gradient(135deg, #833AB4 0%, #E1306C 50%, #F77737 100%)',
+        'ig-gradient-subtle':
+          'linear-gradient(135deg, rgba(131,58,180,0.15) 0%, rgba(225,48,108,0.15) 50%, rgba(247,119,55,0.15) 100%)',
+        'ig-gradient-border':
+          'linear-gradient(135deg, rgba(131,58,180,0.4) 0%, rgba(225,48,108,0.4) 50%, rgba(247,119,55,0.4) 100%)',
+      },
+      boxShadow: {
+        'glow-primary': '0 0 15px rgba(0,191,255,0.25)',
+        'glow-ig': '0 0 20px rgba(225,48,108,0.3)',
       },
     },
   },

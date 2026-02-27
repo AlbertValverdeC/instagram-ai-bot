@@ -21,6 +21,9 @@ try:
         count_recent_publishes as db_count_recent_publishes,
     )
     from modules.post_store import (
+        archive_post_slides as db_archive_post_slides,
+    )
+    from modules.post_store import (
         ensure_schema as ensure_post_store_schema,
     )
     from modules.post_store import (
@@ -45,6 +48,7 @@ except Exception:
     PUBLISHABLE_STATUSES = {"draft", "generated", "publish_error"}
     RETRYABLE_STATUSES = {"generated", "publish_error"}
     db_count_recent_publishes = None
+    db_archive_post_slides = None
     ensure_post_store_schema = None
     get_post_store_db_runtime_info = None
     db_get_post = None
@@ -158,6 +162,12 @@ def _publish_post(post_id: int, *, allowed_statuses: set[str], status_error_labe
         else:
             # No saved slides — regenerate (fallback for legacy drafts)
             image_paths = create_slides(content, topic=topic)
+
+        if db_archive_post_slides is not None and image_paths:
+            try:
+                db_archive_post_slides(post_id=post_id, slide_paths=image_paths)
+            except Exception:
+                pass
 
         db_mark_post_publish_attempt(post_id)
         media_id = publish_carousel(image_paths, content, strategy)
@@ -306,14 +316,20 @@ def api_posts_sync_metrics():
 
     data = request.get_json(silent=True) or {}
     raw_limit = data.get("limit", 20)
+    raw_max_seconds = data.get("max_seconds", 35)
     try:
         limit = max(1, min(int(raw_limit), 200))
     except Exception:
         limit = 20
+    try:
+        max_seconds = max(10, min(int(raw_max_seconds), 180))
+    except Exception:
+        max_seconds = 35
 
     try:
-        result = db_sync_post_metrics(limit=limit)
+        result = db_sync_post_metrics(limit=limit, max_seconds=max_seconds)
         result["auto_interval_minutes"] = get_auto_sync_interval_minutes()
+        result["max_seconds"] = max_seconds
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": f"No se pudieron sincronizar métricas: {e}"}), 500

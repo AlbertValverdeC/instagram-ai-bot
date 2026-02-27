@@ -30,6 +30,8 @@ export interface ApiStateResponse {
   content: ContentPayload | null;
   proposals?: TextProposal[];
   slides: string[];
+  workspace_has_data?: boolean;
+  workspace_updated_at?: string | null;
   history_count: number;
 }
 
@@ -134,6 +136,8 @@ export interface PostRecord {
   content_payload?: Record<string, unknown> | null;
   strategy_payload?: Record<string, unknown> | null;
   source_urls?: string[];
+  history_slides?: string[];
+  history_preview_slides?: string[];
   metrics?: Record<string, unknown> | null;
   [key: string]: unknown;
 }
@@ -169,5 +173,10 @@ export interface SyncMetricsResponse {
   pending_checked?: number;
   pending_reconciled?: number;
   auto_interval_minutes?: number;
+  partial?: boolean;
+  remaining?: number;
+  timed_out?: boolean;
+  elapsed_seconds?: number;
+  max_seconds?: number;
   [key: string]: unknown;
 }

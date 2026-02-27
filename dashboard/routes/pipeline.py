@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
 from flask import Blueprint, jsonify, request
 
@@ -17,6 +18,44 @@ from dashboard.services.pipeline_runner import (
 )
 
 bp = Blueprint("pipeline_routes", __name__)
+
+
+def _workspace_files():
+    return [
+        DATA_DIR / "last_topic.json",
+        DATA_DIR / "last_content.json",
+        DATA_DIR / "last_proposals.json",
+        DATA_DIR / "last_topics.json",
+    ]
+
+
+def _workspace_slide_paths():
+    return sorted(
+        list(OUTPUT_DIR.glob("slide_*.jpg")) + list(OUTPUT_DIR.glob("slide_*.png")),
+        key=lambda p: p.name,
+    )
+
+
+def _clear_workspace() -> tuple[list[str], int]:
+    cleared_files: list[str] = []
+    cleared_slides = 0
+
+    for path in _workspace_files():
+        try:
+            if path.exists():
+                path.unlink()
+                cleared_files.append(path.name)
+        except Exception:
+            pass
+
+    for path in _workspace_slide_paths():
+        try:
+            path.unlink(missing_ok=True)
+            cleared_slides += 1
+        except Exception:
+            pass
+
+    return cleared_files, cleared_slides
 
 
 @bp.get("/api/state")
@@ -47,7 +86,8 @@ def api_state():
             if isinstance(loaded, list):
                 proposals = loaded
 
-    slides = sorted(f.name for f in list(OUTPUT_DIR.glob("slide_*.jpg")) + list(OUTPUT_DIR.glob("slide_*.png")))
+    slide_paths = _workspace_slide_paths()
+    slides = sorted(f.name for f in slide_paths)
 
     history = []
     history_file = DATA_DIR / "history.json"
@@ -55,13 +95,50 @@ def api_state():
         with open(history_file, encoding="utf-8") as f:
             history = json.load(f)
 
+    mtimes: list[float] = []
+    for path in _workspace_files():
+        try:
+            if path.exists():
+                mtimes.append(path.stat().st_mtime)
+        except Exception:
+            pass
+    for path in slide_paths:
+        try:
+            mtimes.append(path.stat().st_mtime)
+        except Exception:
+            pass
+
+    workspace_updated_at = None
+    if mtimes:
+        workspace_updated_at = (
+            datetime.fromtimestamp(max(mtimes), tz=UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        )
+
     return jsonify(
         {
             "topic": topic,
             "content": content,
             "proposals": proposals,
             "slides": slides,
+            "workspace_has_data": bool(topic or content or proposals or slides),
+            "workspace_updated_at": workspace_updated_at,
             "history_count": len(history),
+        }
+    )
+
+
+@bp.post("/api/workspace/clear")
+def api_workspace_clear():
+    auth_error = require_api_token()
+    if auth_error:
+        return auth_error
+
+    cleared_files, cleared_slides = _clear_workspace()
+    return jsonify(
+        {
+            "ok": True,
+            "cleared_files": cleared_files,
+            "cleared_slides": cleared_slides,
         }
     )
 

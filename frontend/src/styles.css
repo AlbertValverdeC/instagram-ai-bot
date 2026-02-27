@@ -21,6 +21,99 @@ body {
     "Segoe UI",
     Roboto,
     sans-serif;
+  color: #e2e8f0;
+  background:
+    radial-gradient(1200px 600px at 100% -10%, rgba(0, 191, 255, 0.12), transparent 55%),
+    radial-gradient(900px 500px at -10% 110%, rgba(52, 211, 153, 0.08), transparent 50%),
+    #0a0f1a;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+@layer base {
+  button {
+    transition:
+      transform 120ms ease,
+      filter 180ms ease,
+      background-color 180ms ease,
+      border-color 180ms ease,
+      color 180ms ease;
+  }
+
+  button:not(:disabled):active {
+    transform: translateY(1px) scale(0.985);
+  }
+
+  button[data-loading="true"] {
+    position: relative;
+    cursor: progress;
+    pointer-events: none;
+  }
+
+  button[data-loading="true"]::after {
+    content: "";
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    height: 11px;
+    width: 11px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 9999px;
+    opacity: 0.95;
+    animation: button-spin 0.8s linear infinite;
+    filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.45));
+  }
+}
+
+@layer components {
+  /* ── Button variants ── */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-background-dark transition-all hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background-dark disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-primary bg-transparent px-4 py-2 text-sm font-semibold text-primary transition-all hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background-dark disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-border-dark bg-transparent px-4 py-2 text-sm font-semibold text-slate-300 transition-all hover:border-slate-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-border-dark focus:ring-offset-2 focus:ring-offset-background-dark disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-red bg-red/10 px-4 py-2 text-sm font-bold text-red shadow-[0_0_10px_rgba(239,68,68,0.2)] transition-all hover:bg-red/20 focus:outline-none focus:ring-2 focus:ring-red focus:ring-offset-2 focus:ring-offset-background-dark disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .btn-success {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-green bg-green/10 px-4 py-2 text-sm font-semibold text-green transition-all hover:bg-green/20 focus:outline-none focus:ring-2 focus:ring-green focus:ring-offset-2 focus:ring-offset-background-dark disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  /* ── Typography helpers ── */
+  .heading-card {
+    @apply font-display font-bold tracking-tight;
+  }
+
+  .label-section {
+    @apply text-xs font-semibold uppercase tracking-wider text-text-subtle;
+  }
+}
+
+/* ── IG gradient border utility ── */
+.ig-border-gradient {
+  position: relative;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 0.75rem;
+}
+.ig-border-gradient::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #833ab4, #e1306c, #f77737);
+  z-index: -1;
 }
 
 /* Custom scrollbar for console */
@@ -49,4 +142,10 @@ body {
 }
 .animate-progress {
   animation: progress-indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes button-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

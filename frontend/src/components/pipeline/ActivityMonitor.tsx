@@ -41,9 +41,7 @@ function ProgressBar({
   return (
     <div className="border-b border-border-dark px-4 py-3">
       <div className="mb-1.5 flex items-center justify-between text-xs">
-        <span className="font-semibold text-orange">
-          Nivel {activeOperation.level} en curso: {activeOperation.label}
-        </span>
+        <span className="font-semibold text-orange">Paso en curso: {activeOperation.label}</span>
         <span className="font-mono text-text-subtle">{elapsed}s</span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-surface-dark">
@@ -100,7 +98,7 @@ function ActivityEntryRow({ entry }: { entry: ActivityEntry }) {
         <span
           className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none ${levelBadgeClass(entry.level)}`}
         >
-          N{entry.level}
+          P{entry.level}
         </span>
       )}
       <span className={`${entry.status === "error" ? "text-red" : "text-slate-300"}`}>
@@ -120,7 +118,7 @@ function CollapsibleRawOutput({ output }: { output: string }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-semibold text-text-subtle transition-colors hover:bg-surface-dark/30 hover:text-white"
+        className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-semibold text-slate-300 transition-colors hover:bg-surface-dark/30 hover:text-white"
       >
         <span
           className="material-symbols-outlined text-[14px] transition-transform"
@@ -174,7 +172,7 @@ export function ActivityMonitor({
     <section className="overflow-hidden rounded-xl border border-border-dark bg-secondary-dark shadow-lg">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border-dark bg-surface-dark/50 px-4 py-3">
-        <h2 className="flex items-center gap-2 text-sm font-bold text-white">
+        <h2 className="flex items-center gap-2 font-display text-sm font-bold text-white">
           <span className="material-symbols-outlined text-primary text-[18px]">monitor_heart</span>
           Monitor de Actividad
         </h2>
@@ -183,7 +181,7 @@ export function ActivityMonitor({
             <button
               type="button"
               onClick={onClear}
-              className="rounded-md px-2.5 py-1 text-[11px] font-semibold text-text-subtle transition-colors hover:bg-surface-dark hover:text-white"
+              className="btn-ghost rounded-md px-2.5 py-1 text-[11px]"
             >
               Limpiar
             </button>

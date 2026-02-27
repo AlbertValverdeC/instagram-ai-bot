@@ -8,22 +8,22 @@ export function SlidesPreview({ slides, cacheBust, onOpen }: SlidesPreviewProps)
   return (
     <section className="flex flex-col overflow-hidden rounded-xl border border-border-dark bg-secondary-dark">
       {/* Header */}
-      <div className="flex items-center justify-between rounded-t-xl border-b border-border-dark bg-surface-dark/50 px-6 py-4">
-        <h3 className="flex items-center gap-2 text-lg font-bold text-white">
+      <div className="flex items-center justify-between rounded-t-xl border-b border-border-dark bg-surface-dark/50 px-4 py-3">
+        <h3 className="flex items-center gap-2 font-display text-base font-bold text-white">
           <span className="material-symbols-outlined text-primary">view_carousel</span>
-          Preview Slides
+          Sesión actual · Slides
         </h3>
         <span className="text-xs text-text-subtle">{slides.length} slides</span>
       </div>
 
       {/* Grid */}
-      <div className="flex-1 bg-[#0f151b] p-6">
+      <div className="flex-1 bg-[#0f151b] p-4">
         {slides.length === 0 ? (
           <p className="text-sm italic text-text-subtle">
-            Sin slides. Ejecuta el pipeline para generarlos.
+            No hay slides en la sesión actual.
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {slides.map((slide, index) => {
               const src = `/slides/${slide}?t=${cacheBust}`;
               return (

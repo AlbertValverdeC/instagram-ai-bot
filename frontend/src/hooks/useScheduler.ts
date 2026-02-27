@@ -4,17 +4,33 @@ import { apiClient } from "../api/client";
 import { usePolling } from "./usePolling";
 import type { SchedulerState, SchedulerConfig } from "../types/scheduler";
 
+function getErrorStatus(error: unknown): number | undefined {
+  const err = error as Error & { status?: number };
+  return err.status;
+}
+
+function getErrorMessage(error: unknown): string {
+  const err = error as Error;
+  return err?.message || "No se pudo cargar el programador automático.";
+}
+
 export function useScheduler() {
   const [data, setData] = useState<SchedulerState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const result = await apiClient.getScheduler();
       setData(result);
-    } catch {
-      // keep stale data
+      setError(null);
+    } catch (e) {
+      if (getErrorStatus(e) === 401) {
+        setError("Acceso no autorizado. Configura el token del dashboard.");
+      } else {
+        setError(getErrorMessage(e));
+      }
     } finally {
       setLoading(false);
     }
@@ -93,5 +109,16 @@ export function useScheduler() {
     [refresh],
   );
 
-  return { data, loading, saving, toggle, saveConfig, addItem, removeItem, autoFill, refresh };
+  return {
+    data,
+    loading,
+    saving,
+    error,
+    toggle,
+    saveConfig,
+    addItem,
+    removeItem,
+    autoFill,
+    refresh,
+  };
 }

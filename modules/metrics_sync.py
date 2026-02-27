@@ -22,6 +22,7 @@ from modules.post_store import (
     mark_post_ig_deleted,
     mark_post_published,
     save_metrics_snapshot,
+    upsert_imported_ig_post,
 )
 
 logger = logging.getLogger(__name__)
@@ -357,12 +358,68 @@ def fetch_media_metrics(ig_media_id: str) -> tuple[dict, dict]:
     return metrics, raw_payloads
 
 
-def sync_recent_post_metrics(limit: int = 30) -> dict:
+def import_recent_account_media(*, limit: int = 30) -> dict:
+    """
+    Import recent account media into local DB if missing.
+    """
+    media_rows = _get_recent_account_media(limit=max(1, min(int(limit or 30), 100)))
+    if not media_rows:
+        return {"import_checked": 0, "import_created": 0, "import_existing": 0, "import_errors": []}
+
+    checked = 0
+    created = 0
+    existing = 0
+    errors: list[dict] = []
+
+    for media in media_rows:
+        checked += 1
+        media_id = str(media.get("id") or "").strip()
+        if not media_id:
+            continue
+        try:
+            _, was_created = upsert_imported_ig_post(
+                media_id=media_id,
+                caption=media.get("caption"),
+                media_timestamp=media.get("timestamp"),
+                media_type=media.get("media_type"),
+                permalink=media.get("permalink"),
+            )
+            if was_created:
+                created += 1
+            else:
+                existing += 1
+        except Exception as e:
+            if len(errors) < 20:
+                errors.append({"ig_media_id": media_id, "error": str(e)})
+
+    return {
+        "import_checked": checked,
+        "import_created": created,
+        "import_existing": existing,
+        "import_errors": errors,
+    }
+
+
+def sync_recent_post_metrics(limit: int = 30, *, max_seconds: int | None = None) -> dict:
     """
     Fetch and persist metrics snapshots for latest published posts.
     """
     if not META_ACCESS_TOKEN:
         raise RuntimeError("META_ACCESS_TOKEN no configurado")
+
+    started_at = time.monotonic()
+    max_runtime_seconds = (
+        max(5, int(max_seconds))
+        if max_seconds is not None
+        else None
+    )
+
+    def _time_budget_exhausted() -> bool:
+        if max_runtime_seconds is None:
+            return False
+        return (time.monotonic() - started_at) >= max_runtime_seconds
+
+    import_result = import_recent_account_media(limit=max(20, min(int(limit or 30), 100)))
 
     reconcile_result = reconcile_pending_posts_with_instagram(
         limit=max(30, min(int(limit or 30), 120)),
@@ -371,6 +428,7 @@ def sync_recent_post_metrics(limit: int = 30) -> dict:
 
     posts = list_posts_for_metrics_sync(limit=limit)
     if not posts:
+        elapsed_seconds = round(time.monotonic() - started_at, 1)
         return {
             "checked": 0,
             "updated": 0,
@@ -379,6 +437,14 @@ def sync_recent_post_metrics(limit: int = 30) -> dict:
             "pending_checked": reconcile_result.get("pending_checked", 0),
             "pending_reconciled": reconcile_result.get("pending_reconciled", 0),
             "pending_errors": reconcile_result.get("pending_errors", []),
+            "import_checked": import_result.get("import_checked", 0),
+            "import_created": import_result.get("import_created", 0),
+            "import_existing": import_result.get("import_existing", 0),
+            "import_errors": import_result.get("import_errors", []),
+            "partial": False,
+            "remaining": 0,
+            "timed_out": False,
+            "elapsed_seconds": elapsed_seconds,
         }
 
     checked = 0
@@ -387,6 +453,8 @@ def sync_recent_post_metrics(limit: int = 30) -> dict:
     errors: list[dict] = []
 
     for row in posts:
+        if _time_budget_exhausted():
+            break
         checked += 1
         post_id = int(row["id"])
         media_id = row.get("ig_media_id")
@@ -418,6 +486,10 @@ def sync_recent_post_metrics(limit: int = 30) -> dict:
                     }
                 )
 
+    remaining = max(0, len(posts) - checked)
+    timed_out = remaining > 0 and max_runtime_seconds is not None
+    elapsed_seconds = round(time.monotonic() - started_at, 1)
+
     return {
         "checked": checked,
         "updated": updated,
@@ -426,4 +498,12 @@ def sync_recent_post_metrics(limit: int = 30) -> dict:
         "pending_checked": reconcile_result.get("pending_checked", 0),
         "pending_reconciled": reconcile_result.get("pending_reconciled", 0),
         "pending_errors": reconcile_result.get("pending_errors", []),
+        "import_checked": import_result.get("import_checked", 0),
+        "import_created": import_result.get("import_created", 0),
+        "import_existing": import_result.get("import_existing", 0),
+        "import_errors": import_result.get("import_errors", []),
+        "partial": timed_out,
+        "remaining": remaining,
+        "timed_out": timed_out,
+        "elapsed_seconds": elapsed_seconds,
     }

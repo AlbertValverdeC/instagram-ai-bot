@@ -12,10 +12,10 @@ export function TopicCard({ topic }: TopicCardProps) {
   if (!topic) {
     return (
       <section className="overflow-hidden rounded-xl border border-border-dark bg-secondary-dark shadow-lg">
-        <div className="p-6">
-          <p className="text-sm font-medium text-text-subtle">Último Topic Generado</p>
+        <div className="p-4">
+          <p className="text-sm font-medium text-text-subtle">Sesión de trabajo · Tema actual</p>
           <p className="mt-3 text-sm italic text-text-subtle">
-            Sin topic. Ejecuta el pipeline para generar uno.
+            Sin tema en la sesión. Crea uno desde el flujo superior.
           </p>
         </div>
       </section>
@@ -28,34 +28,38 @@ export function TopicCard({ topic }: TopicCardProps) {
       ? "text-emerald-400 bg-emerald-400/10 border-emerald-400/20"
       : virality >= 6
         ? "text-orange bg-orange/10 border-orange/20"
-        : "text-text-subtle bg-text-subtle/10 border-text-subtle/20";
+        : "text-slate-400 bg-slate-400/10 border-slate-400/20";
 
   return (
     <section className="flex flex-col overflow-hidden rounded-xl border border-border-dark bg-secondary-dark shadow-lg">
       {/* Header */}
-      <div className="flex items-start justify-between border-b border-border-dark p-6">
+      <div className="flex items-start justify-between gap-3 border-b border-border-dark p-4">
         <div>
-          <p className="mb-1 text-sm font-medium text-text-subtle">Último Topic Generado</p>
-          <h3 className="text-2xl font-bold text-white">{esc(topic.topic || "Sin título")}</h3>
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-text-subtle">
+            Sesión de trabajo · Tema actual
+          </p>
+          <h3 className="font-display text-lg font-bold leading-tight text-white sm:text-xl">
+            {esc(topic.topic || "Sin título")}
+          </h3>
         </div>
         <div className="flex flex-col items-end">
           <div
-            className={`flex items-center gap-1 rounded border px-2 py-1 text-xs font-bold ${viralityColor}`}
+            className={`flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-bold ${viralityColor}`}
           >
             <span className="material-symbols-outlined text-[14px]">trending_up</span>
-            {topic.virality_score ?? "?"}/10 Viral Score
+            {topic.virality_score ?? "?"}/10
           </div>
           {topic.topic_en && (
-            <span className="mt-1 text-xs text-text-subtle">{esc(topic.topic_en)}</span>
+            <span className="mt-1 text-[10px] text-text-subtle">{esc(topic.topic_en)}</span>
           )}
         </div>
       </div>
 
       {/* Body */}
-      <div className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-4 p-4">
         {topic.why && (
           <div>
-            <label className="mb-3 block text-xs font-semibold uppercase tracking-wider text-text-subtle">
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-subtle">
               Descripción
             </label>
             <p className="text-sm leading-relaxed text-slate-300">{esc(topic.why)}</p>
@@ -64,10 +68,10 @@ export function TopicCard({ topic }: TopicCardProps) {
 
         {(topic.key_points || []).length > 0 && (
           <div>
-            <label className="mb-3 block text-xs font-semibold uppercase tracking-wider text-text-subtle">
-              Strategy Points
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-subtle">
+              Puntos clave
             </label>
-            <ul className="space-y-3">
+            <ul className="space-y-2">
               {(topic.key_points || []).map((point, index) => (
                 <li
                   key={`${point}-${index}`}

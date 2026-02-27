@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 
 from flask import Blueprint, jsonify, request
@@ -10,11 +11,14 @@ from dashboard.auth import require_api_token
 from dashboard.config import DATA_DIR, OUTPUT_DIR
 from dashboard.services.pipeline_runner import is_running
 
+logger = logging.getLogger(__name__)
+
 try:
     from modules.carousel_designer import create as create_slides
     from modules.content_generator import generate as generate_content
     from modules.content_generator import generate_text_proposals
     from modules.engagement import get_strategy
+    from modules.post_store import archive_post_slides
     from modules.post_store import create_draft_post
     from modules.post_store import ensure_schema as ensure_post_store_schema
     from modules.researcher import find_trending_topic, find_trending_topics
@@ -23,6 +27,7 @@ except Exception:
     generate_content = None
     generate_text_proposals = None
     get_strategy = None
+    archive_post_slides = None
     create_draft_post = None
     ensure_post_store_schema = None
     find_trending_topic = None
@@ -136,6 +141,7 @@ def api_create_draft():
             "generate_content": generate_content,
             "create_slides": create_slides,
             "get_strategy": get_strategy,
+            "archive_post_slides": archive_post_slides,
             "create_draft_post": create_draft_post,
             "ensure_post_store_schema": ensure_post_store_schema,
         }
@@ -183,6 +189,11 @@ def api_create_draft():
         for p in image_paths:
             if p.exists():
                 shutil.copy2(p, draft_dir / p.name)
+
+        try:
+            archive_post_slides(post_id=post_id, slide_paths=image_paths)
+        except Exception as archive_error:
+            logger.warning("No se pudieron archivar slides del draft %s: %s", post_id, archive_error)
 
         _safe_save_json(DATA_DIR / "last_topic.json", topic)
         _safe_save_json(DATA_DIR / "last_content.json", content)

@@ -31,7 +31,7 @@ def _compute_next_run(config: dict, queue: list[dict]) -> dict | None:
     from zoneinfo import ZoneInfo
 
     from config.settings import TIMEZONE
-    from modules.post_store import DAY_NAMES
+    from modules.post_store import DAY_NAMES, resolve_day_schedule_times
 
     tz = ZoneInfo(TIMEZONE)
     now = datetime.now(tz)
@@ -51,7 +51,25 @@ def _compute_next_run(config: dict, queue: list[dict]) -> dict | None:
         if not day_cfg.get("enabled"):
             continue
 
-        time_str = item.get("scheduled_time") or day_cfg.get("time") or "08:30"
+        if item.get("topic"):
+            time_str = item.get("scheduled_time") or day_cfg.get("time") or "08:30"
+        else:
+            slots = resolve_day_schedule_times(day_cfg)
+            if not slots:
+                continue
+            try:
+                runs_total_raw = int(item.get("runs_total") or len(slots))
+            except (TypeError, ValueError):
+                runs_total_raw = len(slots)
+            try:
+                runs_completed = max(0, int(item.get("runs_completed") or 0))
+            except (TypeError, ValueError):
+                runs_completed = 0
+            runs_total = max(1, min(runs_total_raw, len(slots)))
+            if runs_completed >= runs_total:
+                continue
+            time_str = slots[runs_completed]
+
         match = _TIME_RE.match(time_str)
         if not match:
             continue
@@ -128,6 +146,26 @@ def save_config():
             t = day_cfg.get("time")
             if t is not None and not _TIME_RE.match(str(t)):
                 return jsonify({"error": f"Invalid time for {day}: {t}"}), 400
+
+            times = day_cfg.get("times")
+            if times is not None:
+                if not isinstance(times, list):
+                    return jsonify({"error": f"times for {day} must be a list"}), 400
+                if len(times) > SCHEDULER_MAX_POSTS_PER_DAY:
+                    return (
+                        jsonify(
+                            {
+                                "error": (
+                                    f"times for {day} cannot exceed {SCHEDULER_MAX_POSTS_PER_DAY} entries"
+                                )
+                            }
+                        ),
+                        400,
+                    )
+                for t_slot in times:
+                    if not _TIME_RE.match(str(t_slot or "")):
+                        return jsonify({"error": f"Invalid times entry for {day}: {t_slot}"}), 400
+
             posts_per_day = day_cfg.get("posts_per_day")
             if posts_per_day is not None:
                 try:

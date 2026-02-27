@@ -18,7 +18,7 @@ const STATUS_CONFIG: Record<
   { label: string; dotClass: string; badgeClass: string }
 > = {
   idle: {
-    label: "System Idle",
+    label: "Listo",
     dotClass: "bg-emerald-500",
     badgeClass: "text-text-subtle",
   },
@@ -51,24 +51,26 @@ export function Header({
   onOpenKeys,
 }: HeaderProps) {
   const [tokenVisible, setTokenVisible] = useState(false);
+  const [toolsVisible, setToolsVisible] = useState(false);
   const statusCfg = STATUS_CONFIG[status];
 
   return (
-    <header className="sticky top-0 z-50 flex items-center justify-between border-b border-border-dark bg-secondary-dark/50 px-8 py-4 backdrop-blur-md">
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary/20 text-primary">
-            <span className="material-symbols-outlined">smart_toy</span>
+    <header className="sticky top-0 z-50 border-b border-border-dark bg-secondary-dark/90 px-3 py-3 backdrop-blur-md sm:px-4">
+      <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-3 lg:px-6">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-ig-gradient text-white shadow-glow-ig">
+              <span className="material-symbols-outlined text-[18px]">smart_toy</span>
+            </div>
+            <h1 className="truncate font-display text-base font-bold tracking-tight text-white sm:text-lg">
+              IG AI Bot
+            </h1>
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-white">
-            <span className="text-primary">IG</span> AI Bot
-            <span className="mx-2 font-normal text-text-subtle">|</span>
-            <span className="font-normal text-text-subtle">Panel de Control</span>
-          </h1>
+          <p className="mt-0.5 text-[11px] text-text-subtle">Panel móvil primero · flujo simple</p>
         </div>
 
-        <div className="hidden gap-2 md:flex">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border-dark bg-surface-dark px-3 py-1 text-xs font-medium text-text-subtle">
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="hidden items-center gap-1.5 rounded-full border border-border-dark bg-surface-dark px-2.5 py-1 text-[11px] md:inline-flex">
             <span className="relative flex h-2 w-2">
               <span
                 className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${status === "running" ? "animate-ping bg-orange" : ""}`}
@@ -79,50 +81,75 @@ export function Header({
             </span>
             <span className={statusCfg.badgeClass}>{statusCfg.label}</span>
           </span>
-        </div>
-      </div>
 
-      <div className="flex items-center gap-6">
-        <nav className="hidden items-center gap-6 text-sm font-medium text-text-subtle lg:flex">
-          <button
-            type="button"
-            onClick={onOpenSources}
-            className="flex items-center gap-1 transition-colors hover:text-primary"
-          >
-            <span className="material-symbols-outlined text-[18px]">folder_open</span> Fuentes
-          </button>
-          <button
-            type="button"
-            onClick={onOpenPrompts}
-            className="flex items-center gap-1 transition-colors hover:text-primary"
-          >
-            <span className="material-symbols-outlined text-[18px]">terminal</span> Prompts
-          </button>
-          <button
-            type="button"
-            onClick={onOpenKeys}
-            className="flex items-center gap-1 transition-colors hover:text-primary"
-          >
-            <span className="material-symbols-outlined text-[18px]">key</span> API Keys
-          </button>
-          <a
-            className="flex items-center gap-1 transition-colors hover:text-primary"
-            href="/docs"
-            target="_blank"
-            rel="noreferrer"
-          >
-            <span className="material-symbols-outlined text-[18px]">description</span> Docs
-          </a>
-        </nav>
-
-        <div className="hidden h-6 w-px bg-border-dark lg:block" />
-
-        <div className="flex items-center gap-3">
-          {/* Token config popover */}
           <div className="relative">
             <button
               type="button"
-              onClick={() => setTokenVisible(!tokenVisible)}
+              onClick={() => {
+                setToolsVisible((prev) => !prev);
+                setTokenVisible(false);
+              }}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border-dark bg-surface-dark text-text-subtle transition hover:text-white"
+              title="Herramientas"
+            >
+              <span className="material-symbols-outlined text-[20px]">tune</span>
+            </button>
+            {toolsVisible && (
+              <div className="absolute right-0 top-12 z-50 w-48 rounded-xl border border-border-dark bg-secondary-dark p-2 shadow-2xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenSources();
+                    setToolsVisible(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-text-subtle transition hover:bg-surface-dark hover:text-white"
+                >
+                  <span className="material-symbols-outlined text-[18px]">folder_open</span>
+                  Fuentes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenPrompts();
+                    setToolsVisible(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-text-subtle transition hover:bg-surface-dark hover:text-white"
+                >
+                  <span className="material-symbols-outlined text-[18px]">terminal</span>
+                  Prompts
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenKeys();
+                    setToolsVisible(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-text-subtle transition hover:bg-surface-dark hover:text-white"
+                >
+                  <span className="material-symbols-outlined text-[18px]">key</span>
+                  API Keys
+                </button>
+                <a
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-text-subtle transition hover:bg-surface-dark hover:text-white"
+                  href="/docs"
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setToolsVisible(false)}
+                >
+                  <span className="material-symbols-outlined text-[18px]">description</span>
+                  Docs
+                </a>
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setTokenVisible((prev) => !prev);
+                setToolsVisible(false);
+              }}
               className={`flex size-10 items-center justify-center rounded-full transition-colors ${
                 tokenConfigured
                   ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
@@ -136,7 +163,7 @@ export function Header({
             </button>
 
             {tokenVisible && (
-              <div className="absolute right-0 top-12 z-50 w-72 rounded-xl border border-border-dark bg-secondary-dark p-4 shadow-2xl">
+              <div className="absolute right-0 top-12 z-50 w-[min(86vw,18rem)] rounded-xl border border-border-dark bg-secondary-dark p-4 shadow-2xl">
                 <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-subtle">
                   API Token
                 </label>
@@ -161,7 +188,7 @@ export function Header({
                       onSaveToken();
                       setTokenVisible(false);
                     }}
-                    className="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-background-dark transition hover:bg-primary/90"
+                    className="btn-primary flex-1 py-2"
                   >
                     Guardar
                   </button>
@@ -171,7 +198,7 @@ export function Header({
                       onClearToken();
                       setTokenVisible(false);
                     }}
-                    className="rounded-lg border border-border-dark bg-surface-dark px-4 py-2 text-sm text-text-subtle transition hover:text-white"
+                    className="btn-ghost px-4 py-2"
                   >
                     Limpiar
                   </button>

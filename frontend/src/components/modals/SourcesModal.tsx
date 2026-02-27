@@ -18,13 +18,13 @@ function TagList({ values, onRemove }: { values: string[]; onRemove: (value: str
       {values.map((value) => (
         <span
           key={value}
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-code px-2 py-1 font-mono text-xs text-text"
+          className="inline-flex items-center gap-1 rounded-md border border-border-dark bg-surface-dark px-2 py-1 font-mono text-xs text-slate-100"
         >
           {value}
           <button
             type="button"
             onClick={() => onRemove(value)}
-            className="text-sm font-bold text-dim transition hover:text-red"
+            className="text-sm font-bold text-text-subtle transition hover:text-red"
           >
             ×
           </button>
@@ -37,6 +37,8 @@ function TagList({ values, onRemove }: { values: string[]; onRemove: (value: str
 export function SourcesModal({ open, onClose }: SourcesModalProps) {
   const [config, setConfig] = useState<ResearchConfig | null>(null);
   const [isCustom, setIsCustom] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState<{
     text: string;
     color: "green" | "red" | "orange";
@@ -82,12 +84,15 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
       return;
     }
     try {
+      setSaving(true);
       await apiClient.saveResearchConfig(config);
       setIsCustom(true);
       setMessage({ text: "Guardado correctamente", color: "green" });
     } catch (error) {
       const err = error as Error;
       setMessage({ text: err.message || "Error al guardar", color: "red" });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -97,6 +102,7 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
     }
 
     try {
+      setResetting(true);
       await apiClient.resetResearchConfig();
       const data: ResearchConfigResponse = await apiClient.getResearchConfig();
       setConfig(data.config);
@@ -104,6 +110,8 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
       setMessage({ text: "Restaurado a originales", color: "green" });
     } catch {
       setMessage({ text: "Error al restaurar", color: "red" });
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -117,11 +125,11 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-[760px] max-w-[95vw] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl"
+        className="max-h-[90vh] w-[760px] max-w-[95vw] overflow-y-auto rounded-xl border border-border-dark bg-secondary-dark shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-6 py-5">
-          <h2 className="text-lg font-bold">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-dark bg-secondary-dark px-6 py-5">
+          <h2 className="font-display text-lg font-bold">
             📡 Fuentes de Investigacion{" "}
             {isCustom ? (
               <span className="ml-1 rounded-full bg-green/20 px-2 py-0.5 text-[10px] font-bold uppercase text-green">
@@ -132,7 +140,7 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
           <button
             type="button"
             onClick={onClose}
-            className="text-2xl text-dim transition hover:text-text"
+            className="text-2xl text-text-subtle transition hover:text-white"
           >
             ×
           </button>
@@ -140,14 +148,14 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
 
         <div className="space-y-5 px-6 py-5">
           {!config ? (
-            <p className="text-sm italic text-dim">Cargando...</p>
+            <p className="text-sm italic text-text-subtle">Cargando...</p>
           ) : (
             <>
               <section>
-                <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-accent">
+                <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-primary">
                   Subreddits
                 </h3>
-                <p className="mb-2 text-xs text-dim">
+                <p className="mb-2 text-xs text-text-subtle">
                   Subreddits de Reddit de los que se extraen posts trending.
                 </p>
                 <TagList
@@ -167,7 +175,7 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
                         setNewSubreddit("");
                       }
                     }}
-                    className="flex-1 rounded-md border border-border bg-code px-3 py-2 font-mono text-xs text-text outline-none focus:border-accent"
+                    className="flex-1 rounded-md border border-border-dark bg-surface-dark px-3 py-2 font-mono text-xs text-slate-100 outline-none focus:border-primary"
                     placeholder="Nuevo subreddit (ej: LocalLLaMA)"
                   />
                   <button
@@ -176,7 +184,7 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
                       addValue("subreddits", newSubreddit);
                       setNewSubreddit("");
                     }}
-                    className="rounded-md border border-border bg-code px-3 py-2 text-sm font-semibold text-text transition hover:border-accent hover:text-accent"
+                    className="rounded-md border border-border-dark bg-surface-dark px-3 py-2 text-sm font-semibold text-slate-100 transition hover:border-primary hover:text-primary"
                   >
                     +
                   </button>
@@ -184,10 +192,10 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
               </section>
 
               <section>
-                <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-accent">
+                <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-primary">
                   RSS Feeds
                 </h3>
-                <p className="mb-2 text-xs text-dim">
+                <p className="mb-2 text-xs text-text-subtle">
                   URLs de feeds RSS/Atom. Se extraen los 10 artículos más recientes de cada uno.
                 </p>
                 <TagList
@@ -207,7 +215,7 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
                         setNewFeed("");
                       }
                     }}
-                    className="flex-1 rounded-md border border-border bg-code px-3 py-2 font-mono text-xs text-text outline-none focus:border-accent"
+                    className="flex-1 rounded-md border border-border-dark bg-surface-dark px-3 py-2 font-mono text-xs text-slate-100 outline-none focus:border-primary"
                     placeholder="URL del feed (ej: https://example.com/feed/)"
                   />
                   <button
@@ -216,7 +224,7 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
                       addValue("rss_feeds", newFeed);
                       setNewFeed("");
                     }}
-                    className="rounded-md border border-border bg-code px-3 py-2 text-sm font-semibold text-text transition hover:border-accent hover:text-accent"
+                    className="rounded-md border border-border-dark bg-surface-dark px-3 py-2 text-sm font-semibold text-slate-100 transition hover:border-primary hover:text-primary"
                   >
                     +
                   </button>
@@ -224,10 +232,10 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
               </section>
 
               <section>
-                <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-accent">
+                <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-primary">
                   Google Trends Keywords
                 </h3>
-                <p className="mb-2 text-xs text-dim">
+                <p className="mb-2 text-xs text-text-subtle">
                   Solo se muestran tendencias que contengan alguna de estas palabras.
                 </p>
                 <TagList
@@ -250,7 +258,7 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
                         setNewKeyword("");
                       }
                     }}
-                    className="flex-1 rounded-md border border-border bg-code px-3 py-2 font-mono text-xs text-text outline-none focus:border-accent"
+                    className="flex-1 rounded-md border border-border-dark bg-surface-dark px-3 py-2 font-mono text-xs text-slate-100 outline-none focus:border-primary"
                     placeholder="Nueva keyword (ej: blockchain)"
                   />
                   <button
@@ -259,7 +267,7 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
                       addValue("trends_keywords", newKeyword);
                       setNewKeyword("");
                     }}
-                    className="rounded-md border border-border bg-code px-3 py-2 text-sm font-semibold text-text transition hover:border-accent hover:text-accent"
+                    className="rounded-md border border-border-dark bg-surface-dark px-3 py-2 text-sm font-semibold text-slate-100 transition hover:border-primary hover:text-primary"
                   >
                     +
                   </button>
@@ -267,16 +275,16 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
               </section>
 
               <section>
-                <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-accent">
+                <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-primary">
                   NewsAPI Dominios
                 </h3>
-                <p className="mb-2 text-xs text-dim">
+                <p className="mb-2 text-xs text-text-subtle">
                   Dominios separados por coma. Dejar vacío para top-headlines genéricos.
                 </p>
                 <input
                   value={config.newsapi_domains}
                   onChange={(e) => setConfig({ ...config, newsapi_domains: e.target.value })}
-                  className="w-full rounded-md border border-border bg-code px-3 py-2 font-mono text-xs text-text outline-none focus:border-accent"
+                  className="w-full rounded-md border border-border-dark bg-surface-dark px-3 py-2 font-mono text-xs text-slate-100 outline-none focus:border-primary"
                   placeholder="techcrunch.com,theverge.com,arstechnica.com"
                 />
               </section>
@@ -284,7 +292,7 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
           )}
         </div>
 
-        <div className="sticky bottom-0 flex items-center justify-between border-t border-border bg-card px-6 py-4">
+        <div className="sticky bottom-0 flex items-center justify-between border-t border-border-dark bg-secondary-dark px-6 py-4">
           <span
             className={`text-sm ${
               message?.color === "green"
@@ -299,18 +307,21 @@ export function SourcesModal({ open, onClose }: SourcesModalProps) {
           <div className="flex gap-2">
             <button
               type="button"
-              disabled={!isCustom}
+              disabled={!isCustom || resetting || saving}
               onClick={reset}
-              className="rounded-lg border border-border bg-bg px-4 py-2 text-sm font-semibold text-text transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+              data-loading={resetting ? "true" : undefined}
+              className="btn-ghost px-4 py-2"
             >
-              ↩️ Restaurar Originales
+              {resetting ? "Restaurando..." : "↩️ Restaurar Originales"}
             </button>
             <button
               type="button"
               onClick={save}
-              className="rounded-lg border border-green bg-green/10 px-4 py-2 text-sm font-semibold text-green transition hover:bg-green/20"
+              disabled={saving || resetting}
+              data-loading={saving ? "true" : undefined}
+              className="btn-success px-4 py-2"
             >
-              💾 Guardar
+              {saving ? "Guardando..." : "💾 Guardar"}
             </button>
           </div>
         </div>

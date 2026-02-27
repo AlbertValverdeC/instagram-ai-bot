@@ -29,6 +29,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from config.settings import DATA_DIR, LOGS_DIR, OPENAI_API_KEY, OUTPUT_DIR
 from config.templates import TEMPLATES
 from modules.post_store import (
+    archive_post_slides,
     create_generated_post,
     find_duplicate_candidate,
     get_db_runtime_info,
@@ -444,6 +445,8 @@ def daily_pipeline(
                 content=content,
                 strategy=strategy,
             )
+            if image_paths:
+                archive_post_slides(post_id=post_id, slide_paths=image_paths)
             logger.info(
                 "✓ Saved generated carousel to post store (id=%s, status=generated)",
                 post_id,

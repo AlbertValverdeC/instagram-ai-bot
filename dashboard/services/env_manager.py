@@ -14,7 +14,9 @@ def read_env() -> dict:
     env = {}
     # First, pick up any real environment variables
     env.update(os.environ)
-    # Then overlay with .env file values (if present)
+    # Then overlay with .env file values (if present).
+    # If a .env value is empty and there is already a non-empty real env var
+    # (e.g. injected from secure vault launcher), keep the real env value.
     if ENV_FILE.exists():
         for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -22,7 +24,11 @@ def read_env() -> dict:
                 continue
             if "=" in line:
                 k, v = line.split("=", 1)
-                env[k.strip()] = v.strip()
+                key = k.strip()
+                value = v.strip()
+                if value == "" and env.get(key):
+                    continue
+                env[key] = value
     return env
 
 

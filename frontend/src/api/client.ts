@@ -22,9 +22,14 @@ export function setApiTokenGetter(getter: () => string) {
   tokenGetter = getter;
 }
 
-async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers || {});
-  if (!headers.has("Content-Type") && init.body) {
+type ApiFetchInit = RequestInit & {
+  timeoutMs?: number;
+};
+
+async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promise<T> {
+  const { timeoutMs = 90_000, ...requestInit } = init;
+  const headers = new Headers(requestInit.headers || {});
+  if (!headers.has("Content-Type") && requestInit.body) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -33,7 +38,34 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set("X-API-Token", token);
   }
 
-  const response = await fetch(path, { ...init, headers });
+  const controller = new AbortController();
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  if (requestInit.signal) {
+    if (requestInit.signal.aborted) {
+      controller.abort(requestInit.signal.reason);
+    } else {
+      requestInit.signal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+  }
+  if (timeoutMs > 0) {
+    timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(path, { ...requestInit, headers, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      const seconds = Math.max(1, Math.round(timeoutMs / 1000));
+      throw new Error(`Timeout (${seconds}s) esperando respuesta de ${path}`);
+    }
+    throw err;
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+
   const body = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -130,7 +162,13 @@ export const apiClient = {
   syncInstagram: (limit = 30) =>
     apiFetch<SyncMetricsResponse>("/api/posts/sync-instagram", {
       method: "POST",
-      body: JSON.stringify({ limit }),
+      body: JSON.stringify({ limit, max_seconds: 35 }),
+      timeoutMs: 45_000,
+    }),
+  clearWorkspace: () =>
+    apiFetch<{ ok: boolean; cleared_files: string[]; cleared_slides: number }>("/api/workspace/clear", {
+      method: "POST",
+      body: JSON.stringify({}),
     }),
   getScheduler: () => apiFetch<SchedulerState>("/api/scheduler"),
   saveSchedulerConfig: (config: SchedulerConfig) =>

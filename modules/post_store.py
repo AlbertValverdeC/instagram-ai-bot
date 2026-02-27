@@ -14,7 +14,9 @@ import json
 import logging
 import re
 import threading
+import shutil
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import (
@@ -40,7 +42,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, OperationalError
 
-from config.settings import DATABASE_URL, DUPLICATE_TOPIC_WINDOW_DAYS, IS_CLOUD_RUN
+from config.settings import DATABASE_URL, DUPLICATE_TOPIC_WINDOW_DAYS, IS_CLOUD_RUN, OUTPUT_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +146,8 @@ content_queue_table = Table(
     Column("topic", Text, nullable=True),
     Column("template", Integer, nullable=True),
     Column("status", String(20), nullable=False, server_default="pending", index=True),
+    Column("runs_total", Integer, nullable=False, server_default="1"),
+    Column("runs_completed", Integer, nullable=False, server_default="0"),
     Column("post_id", Integer, ForeignKey("posts.id", ondelete="SET NULL"), nullable=True),
     Column("result_message", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
@@ -153,18 +157,22 @@ content_queue_table = Table(
 )
 
 DEFAULT_SCHEDULE = {
-    "monday": {"enabled": True, "time": "08:30", "posts_per_day": 1},
-    "tuesday": {"enabled": True, "time": "08:30", "posts_per_day": 1},
-    "wednesday": {"enabled": True, "time": "08:30", "posts_per_day": 1},
-    "thursday": {"enabled": True, "time": "08:30", "posts_per_day": 1},
-    "friday": {"enabled": True, "time": "08:30", "posts_per_day": 1},
-    "saturday": {"enabled": True, "time": "10:00", "posts_per_day": 1},
-    "sunday": {"enabled": False, "time": None, "posts_per_day": 1},
+    "monday": {"enabled": True, "time": "08:30", "posts_per_day": 1, "times": ["08:30"]},
+    "tuesday": {"enabled": True, "time": "08:30", "posts_per_day": 1, "times": ["08:30"]},
+    "wednesday": {"enabled": True, "time": "08:30", "posts_per_day": 1, "times": ["08:30"]},
+    "thursday": {"enabled": True, "time": "08:30", "posts_per_day": 1, "times": ["08:30"]},
+    "friday": {"enabled": True, "time": "08:30", "posts_per_day": 1, "times": ["08:30"]},
+    "saturday": {"enabled": True, "time": "10:00", "posts_per_day": 1, "times": ["10:00"]},
+    "sunday": {"enabled": False, "time": None, "posts_per_day": 1, "times": []},
 }
 
 DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 SCHEDULER_MIN_POSTS_PER_DAY = 1
 SCHEDULER_MAX_POSTS_PER_DAY = 10
+SCHEDULER_TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+HISTORY_SLIDES_ROOT = OUTPUT_DIR / "history"
+HISTORY_SLIDES_KEY = "history_slides"
+HISTORY_PREVIEW_SLIDES_KEY = "history_preview_slides"
 
 
 def _utc_now() -> datetime:
@@ -212,6 +220,52 @@ def _normalize_posts_per_day(value) -> int:
     return max(SCHEDULER_MIN_POSTS_PER_DAY, min(parsed, SCHEDULER_MAX_POSTS_PER_DAY))
 
 
+def _next_time_slot(time_str: str, *, step_hours: int = 2) -> str:
+    hour = int(time_str[:2])
+    minute = int(time_str[3:])
+    next_hour = (hour + step_hours) % 24
+    return f"{next_hour:02d}:{minute:02d}"
+
+
+def _normalize_day_times(day_cfg: dict, default_time: str | None, posts_per_day: int) -> list[str]:
+    raw_times = day_cfg.get("times")
+    normalized_times: list[str] = []
+
+    if isinstance(raw_times, list):
+        for raw_time in raw_times:
+            candidate = str(raw_time or "").strip()
+            if not SCHEDULER_TIME_RE.match(candidate):
+                continue
+            if candidate in normalized_times:
+                continue
+            normalized_times.append(candidate)
+
+    fallback_time = str(day_cfg.get("time") or default_time or "").strip()
+    if fallback_time and SCHEDULER_TIME_RE.match(fallback_time) and fallback_time not in normalized_times:
+        normalized_times.insert(0, fallback_time)
+
+    if not normalized_times and posts_per_day > 0:
+        normalized_times.append("08:30")
+
+    while len(normalized_times) < posts_per_day:
+        candidate = _next_time_slot(normalized_times[-1], step_hours=2)
+        for _ in range(24):
+            if candidate not in normalized_times:
+                break
+            candidate = _next_time_slot(candidate, step_hours=1)
+        if candidate in normalized_times:
+            break
+        normalized_times.append(candidate)
+
+    return normalized_times[:posts_per_day]
+
+
+def resolve_day_schedule_times(day_cfg: dict | None) -> list[str]:
+    cfg = day_cfg if isinstance(day_cfg, dict) else {}
+    posts_per_day = _normalize_posts_per_day(cfg.get("posts_per_day", SCHEDULER_MIN_POSTS_PER_DAY))
+    return _normalize_day_times(cfg, str(cfg.get("time") or "").strip() or None, posts_per_day)
+
+
 def _normalize_schedule(schedule: dict | None) -> dict:
     normalized = {}
     source = schedule if isinstance(schedule, dict) else {}
@@ -222,18 +276,15 @@ def _normalize_schedule(schedule: dict | None) -> dict:
             day_cfg = {}
 
         enabled = bool(day_cfg.get("enabled", default_cfg["enabled"]))
-        time_value = day_cfg.get("time", default_cfg["time"])
-        if time_value is not None:
-            time_text = str(time_value).strip()
-            if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", time_text):
-                time_value = default_cfg["time"]
-            else:
-                time_value = time_text
+        posts_per_day = _normalize_posts_per_day(day_cfg.get("posts_per_day", default_cfg["posts_per_day"]))
+        times = _normalize_day_times(day_cfg, default_cfg.get("time"), posts_per_day)
+        time_value = times[0] if times else None
 
         normalized[day_name] = {
             "enabled": enabled,
             "time": time_value,
-            "posts_per_day": _normalize_posts_per_day(day_cfg.get("posts_per_day", default_cfg["posts_per_day"])),
+            "posts_per_day": posts_per_day,
+            "times": times,
         }
     return normalized
 
@@ -296,6 +347,128 @@ def source_hash(url: str) -> str:
     if not canon:
         return ""
     return _hash_text(canon)
+
+
+def _sanitize_slide_ref(value: str) -> str | None:
+    raw = str(value or "").strip().replace("\\", "/").lstrip("/")
+    if not raw:
+        return None
+    parts = [part for part in raw.split("/") if part and part != "."]
+    if not parts or any(part == ".." for part in parts):
+        return None
+    return "/".join(parts)
+
+
+def _extract_history_slide_refs(content_payload: dict | None) -> tuple[list[str], list[str]]:
+    if not isinstance(content_payload, dict):
+        return [], []
+
+    all_refs: list[str] = []
+    raw_refs = content_payload.get(HISTORY_SLIDES_KEY)
+    if isinstance(raw_refs, list):
+        for raw in raw_refs:
+            ref = _sanitize_slide_ref(str(raw or ""))
+            if ref and ref not in all_refs:
+                all_refs.append(ref)
+
+    preview_refs: list[str] = []
+    raw_preview = content_payload.get(HISTORY_PREVIEW_SLIDES_KEY)
+    if isinstance(raw_preview, list):
+        for raw in raw_preview:
+            ref = _sanitize_slide_ref(str(raw or ""))
+            if ref and ref in all_refs and ref not in preview_refs:
+                preview_refs.append(ref)
+
+    if not preview_refs and all_refs:
+        preview_refs = all_refs[:3]
+
+    return all_refs, preview_refs
+
+
+def save_post_history_slides(
+    post_id: int,
+    slide_refs: list[str],
+    *,
+    preview_limit: int = 3,
+) -> list[str]:
+    ensure_schema()
+    safe_post_id = int(post_id)
+    safe_preview_limit = max(1, min(int(preview_limit or 3), 8))
+
+    normalized_refs: list[str] = []
+    for raw in slide_refs:
+        ref = _sanitize_slide_ref(str(raw or ""))
+        if not ref or ref in normalized_refs:
+            continue
+        normalized_refs.append(ref)
+
+    if not normalized_refs:
+        return []
+
+    with get_engine().begin() as conn:
+        row = (
+            conn.execute(
+                select(posts_table.c.content_payload).where(posts_table.c.id == safe_post_id).limit(1)
+            )
+            .mappings()
+            .first()
+        )
+        if not row:
+            return []
+
+        payload = row.get("content_payload")
+        if not isinstance(payload, dict):
+            payload = {}
+        else:
+            payload = dict(payload)
+
+        payload[HISTORY_SLIDES_KEY] = normalized_refs
+        payload[HISTORY_PREVIEW_SLIDES_KEY] = normalized_refs[:safe_preview_limit]
+
+        conn.execute(
+            posts_table.update().where(posts_table.c.id == safe_post_id).values(content_payload=payload)
+        )
+
+    return normalized_refs
+
+
+def archive_post_slides(
+    *,
+    post_id: int,
+    slide_paths: list[Path | str],
+    preview_limit: int = 3,
+) -> list[str]:
+    safe_post_id = int(post_id)
+    target_dir = HISTORY_SLIDES_ROOT / str(safe_post_id)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    stored_refs: list[str] = []
+    for idx, raw_path in enumerate(slide_paths):
+        path_obj = Path(raw_path)
+        if not path_obj.exists() or not path_obj.is_file():
+            continue
+        suffix = path_obj.suffix.lower()
+        if suffix not in {".png", ".jpg", ".jpeg"}:
+            continue
+        normalized_suffix = ".jpg" if suffix == ".jpeg" else suffix
+        filename = f"slide_{idx:02d}{normalized_suffix}"
+        dest = target_dir / filename
+        try:
+            shutil.copy2(path_obj, dest)
+        except Exception as exc:
+            logger.warning("Could not archive slide for post %s (%s): %s", safe_post_id, path_obj, exc)
+            continue
+        ref = f"history/{safe_post_id}/{filename}"
+        stored_refs.append(ref)
+
+    if not stored_refs:
+        return []
+
+    return save_post_history_slides(
+        safe_post_id,
+        stored_refs,
+        preview_limit=preview_limit,
+    )
 
 
 def get_engine():
@@ -379,6 +552,11 @@ _POSTS_MIGRATIONS = [
     ("proposal_payload", "ALTER TABLE posts ADD COLUMN proposal_payload JSON"),
 ]
 
+_CONTENT_QUEUE_MIGRATIONS = [
+    ("runs_total", "ALTER TABLE content_queue ADD COLUMN runs_total INTEGER DEFAULT 1"),
+    ("runs_completed", "ALTER TABLE content_queue ADD COLUMN runs_completed INTEGER DEFAULT 0"),
+]
+
 
 def _run_schema_migrations():
     """
@@ -387,7 +565,8 @@ def _run_schema_migrations():
     engine = get_engine()
     with engine.begin() as conn:
         insp = inspect(conn)
-        if "posts" not in insp.get_table_names():
+        table_names = set(insp.get_table_names())
+        if "posts" not in table_names:
             return
 
         existing = {c["name"] for c in insp.get_columns("posts")}
@@ -410,6 +589,25 @@ def _run_schema_migrations():
             conn.execute(text("CREATE INDEX ix_posts_ig_status ON posts (ig_status)"))
         if "ix_posts_last_error_tag" not in index_names:
             conn.execute(text("CREATE INDEX ix_posts_last_error_tag ON posts (last_error_tag)"))
+
+        if "content_queue" in table_names:
+            queue_columns = {c["name"] for c in insp.get_columns("content_queue")}
+            for column_name, sql in _CONTENT_QUEUE_MIGRATIONS:
+                if column_name in queue_columns:
+                    continue
+                logger.info("Applying post_store migration: add content_queue.%s", column_name)
+                conn.execute(text(sql))
+            conn.execute(text("UPDATE content_queue SET runs_total = 1 WHERE runs_total IS NULL OR runs_total < 1"))
+            conn.execute(
+                text("UPDATE content_queue SET runs_completed = 0 WHERE runs_completed IS NULL OR runs_completed < 0")
+            )
+            conn.execute(
+                text(
+                    "UPDATE content_queue "
+                    "SET runs_completed = runs_total "
+                    "WHERE status = 'completed' AND runs_completed < runs_total"
+                )
+            )
 
 
 def ensure_schema():
@@ -774,12 +972,15 @@ def get_post(post_id: int) -> dict | None:
         )
 
     out = dict(row)
+    history_slides, history_preview_slides = _extract_history_slide_refs(out.get("content_payload"))
     for key in ("last_publish_attempt_at", "ig_last_checked_at", "published_at", "created_at"):
         value = out.get(key)
         if isinstance(value, datetime):
             out[key] = value.isoformat()
 
     out["source_urls"] = [r["source_url"] for r in src_rows]
+    out["history_slides"] = history_slides
+    out["history_preview_slides"] = history_preview_slides
     if metric_row:
         out["metrics"] = {
             "collected_at": metric_row["collected_at"].isoformat() if metric_row["collected_at"] else None,
@@ -883,6 +1084,90 @@ def save_published_post(
     mark_post_publish_attempt(post_id)
     mark_post_published(post_id=post_id, media_id=media_id, status=status)
     return int(post_id)
+
+
+def _topic_from_caption_for_import(caption: str | None, media_id: str) -> str:
+    text = str(caption or "").strip()
+    if not text:
+        return f"IG import {media_id}"
+    first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    topic = first_line or text
+    return topic[:180]
+
+
+def upsert_imported_ig_post(
+    *,
+    media_id: str,
+    caption: str | None = None,
+    media_timestamp=None,
+    media_type: str | None = None,
+    permalink: str | None = None,
+) -> tuple[int, bool]:
+    """
+    Ensure one local post row exists for a published IG media id.
+
+    Returns:
+      (post_id, created_new)
+    """
+    ensure_schema()
+    safe_media_id = str(media_id or "").strip()
+    if not safe_media_id:
+        raise ValueError("media_id is required")
+
+    published_at = _parse_maybe_datetime(media_timestamp) or _utc_now()
+    topic = _topic_from_caption_for_import(caption, safe_media_id)
+    payload = {
+        "imported_from_ig": True,
+        "media_id": safe_media_id,
+        "media_type": str(media_type or "").strip() or None,
+        "permalink": str(permalink or "").strip() or None,
+        "timestamp": published_at.isoformat(),
+    }
+
+    with get_engine().begin() as conn:
+        existing = (
+            conn.execute(select(posts_table.c.id).where(posts_table.c.ig_media_id == safe_media_id).limit(1))
+            .mappings()
+            .first()
+        )
+        if existing:
+            post_id = int(existing["id"])
+            conn.execute(
+                update(posts_table)
+                .where(posts_table.c.id == post_id)
+                .values(
+                    status=POST_STATUS_PUBLISHED_ACTIVE,
+                    ig_status="active",
+                    ig_last_checked_at=_utc_now(),
+                )
+            )
+            return post_id, False
+
+        result = conn.execute(
+            posts_table.insert().values(
+                ig_media_id=safe_media_id,
+                topic=topic,
+                topic_en=None,
+                topic_hash=topic_hash(topic) or _hash_text(f"imported-{safe_media_id}"),
+                caption=str(caption or "").strip() or None,
+                virality_score=None,
+                status=POST_STATUS_PUBLISHED_ACTIVE,
+                ig_status="active",
+                source_count=0,
+                publish_attempts=0,
+                last_publish_attempt_at=None,
+                last_error_tag=None,
+                last_error_code=None,
+                last_error_message=None,
+                ig_last_checked_at=_utc_now(),
+                published_at=published_at,
+                topic_payload=payload,
+                proposal_payload=None,
+                content_payload=None,
+                strategy_payload=None,
+            )
+        )
+        return int(result.inserted_primary_key[0]), True
 
 
 def list_posts_for_metrics_sync(limit: int = 50) -> list[dict]:
@@ -1036,6 +1321,7 @@ def list_posts(limit: int = 50) -> list[dict]:
                     posts_table.c.id,
                     posts_table.c.ig_media_id,
                     posts_table.c.topic,
+                    posts_table.c.content_payload,
                     posts_table.c.virality_score,
                     posts_table.c.status,
                     posts_table.c.ig_status,
@@ -1115,6 +1401,7 @@ def list_posts(limit: int = 50) -> list[dict]:
         last_publish_attempt_at = row["last_publish_attempt_at"]
         ig_last_checked_at = row["ig_last_checked_at"]
         metrics = latest_metrics_by_post.get(row["id"], {})
+        history_slides, history_preview_slides = _extract_history_slide_refs(row.get("content_payload"))
         out.append(
             {
                 "id": row["id"],
@@ -1133,6 +1420,8 @@ def list_posts(limit: int = 50) -> list[dict]:
                 "published_at": published_at.isoformat() if published_at else None,
                 "created_at": created_at.isoformat() if created_at else None,
                 "source_urls": sources_by_post.get(row["id"], []),
+                "history_slides": history_slides,
+                "history_preview_slides": history_preview_slides,
                 "metrics_collected_at": metrics.get("metrics_collected_at"),
                 "impressions": metrics.get("impressions"),
                 "reach": metrics.get("reach"),
@@ -1297,6 +1586,8 @@ def save_scheduler_config(enabled: bool, schedule: dict) -> None:
 
 def _queue_row_to_dict(row) -> dict:
     d = dict(row)
+    d["runs_total"] = max(1, _to_int(d.get("runs_total")) or 1)
+    d["runs_completed"] = max(0, min(_to_int(d.get("runs_completed")) or 0, d["runs_total"]))
     for key in ("created_at", "started_at", "completed_at"):
         val = d.get(key)
         if isinstance(val, datetime):
@@ -1344,8 +1635,10 @@ def add_queue_item(
     topic: str | None = None,
     template: int | None = None,
     scheduled_time: str | None = None,
+    runs_total: int = 1,
 ) -> int:
     ensure_schema()
+    safe_runs_total = _normalize_posts_per_day(runs_total)
     with get_engine().begin() as conn:
         result = conn.execute(
             content_queue_table.insert().values(
@@ -1354,6 +1647,8 @@ def add_queue_item(
                 topic=topic,
                 template=template,
                 status="pending",
+                runs_total=safe_runs_total,
+                runs_completed=0,
             )
         )
     return int(result.inserted_primary_key[0])
@@ -1404,12 +1699,22 @@ def auto_fill_queue(days: int = 7) -> dict:
             skipped_existing += 1
             continue
 
-        time_str = day_cfg.get("time")
+        posts_per_day = _normalize_posts_per_day(day_cfg.get("posts_per_day", SCHEDULER_MIN_POSTS_PER_DAY))
+        time_slots = resolve_day_schedule_times(day_cfg)
+        time_str = time_slots[0] if time_slots else day_cfg.get("time")
         item_id = add_queue_item(
             scheduled_date=date_str,
             scheduled_time=time_str,
+            runs_total=posts_per_day,
         )
-        created.append({"id": item_id, "scheduled_date": date_str, "scheduled_time": time_str})
+        created.append(
+            {
+                "id": item_id,
+                "scheduled_date": date_str,
+                "scheduled_time": time_str,
+                "runs_total": posts_per_day,
+            }
+        )
 
     return {
         "created": created,
@@ -1428,14 +1733,59 @@ def mark_queue_item_processing(item_id: int) -> None:
         )
 
 
-def mark_queue_item_completed(item_id: int, post_id: int | None = None, message: str | None = None) -> None:
+def mark_queue_item_pending(
+    item_id: int,
+    *,
+    runs_completed: int,
+    runs_total: int,
+    post_id: int | None = None,
+    message: str | None = None,
+) -> None:
     ensure_schema()
+    safe_runs_total = _normalize_posts_per_day(runs_total)
+    safe_runs_completed = max(0, min(_to_int(runs_completed) or 0, safe_runs_total))
+    with get_engine().begin() as conn:
+        conn.execute(
+            update(content_queue_table)
+            .where(content_queue_table.c.id == int(item_id))
+            .values(
+                status="pending",
+                runs_completed=safe_runs_completed,
+                runs_total=safe_runs_total,
+                post_id=post_id,
+                result_message=(message or "")[:2000] or None,
+                started_at=None,
+            )
+        )
+
+
+def mark_queue_item_completed(
+    item_id: int,
+    post_id: int | None = None,
+    message: str | None = None,
+    runs_total: int | None = None,
+) -> None:
+    ensure_schema()
+    safe_runs_total = _normalize_posts_per_day(runs_total or 1)
+    if runs_total is None:
+        with get_engine().begin() as conn:
+            row = (
+                conn.execute(
+                    select(content_queue_table.c.runs_total).where(content_queue_table.c.id == int(item_id)).limit(1)
+                )
+                .mappings()
+                .first()
+            )
+            if row:
+                safe_runs_total = _normalize_posts_per_day(row.get("runs_total"))
     with get_engine().begin() as conn:
         conn.execute(
             update(content_queue_table)
             .where(content_queue_table.c.id == int(item_id))
             .values(
                 status="completed",
+                runs_completed=safe_runs_total,
+                runs_total=safe_runs_total,
                 post_id=post_id,
                 result_message=message,
                 completed_at=_utc_now(),
@@ -1452,6 +1802,7 @@ def mark_queue_item_error(item_id: int, message: str | None = None) -> None:
             .values(
                 status="error",
                 result_message=(message or "")[:2000] or None,
+                started_at=None,
                 completed_at=_utc_now(),
             )
         )

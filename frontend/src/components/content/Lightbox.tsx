@@ -70,7 +70,7 @@ export function Lightbox({
           e.stopPropagation();
           onPrev();
         }}
-        className="absolute left-5 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-white/10 text-3xl text-white transition hover:bg-white/25"
+        className="absolute left-5 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-white/10 text-3xl text-white transition hover:bg-white/25 focus:outline-none focus:ring-2 focus:ring-primary"
       >
         ‹
       </button>
@@ -86,7 +86,7 @@ export function Lightbox({
           e.stopPropagation();
           onNext();
         }}
-        className="absolute right-5 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-white/10 text-3xl text-white transition hover:bg-white/25"
+        className="absolute right-5 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-white/10 text-3xl text-white transition hover:bg-white/25 focus:outline-none focus:ring-2 focus:ring-primary"
       >
         ›
       </button>

@@ -2,58 +2,59 @@
   "slides": [
     {
       "type": "cover",
-      "title": "REINVENTANDO LA IA",
-      "subtitle": "Gemini 3.1 Pro de Google, **superando a Claude** y **definiendo el futuro** de la inteligencia artificial."
+      "title": "BATALLA DE AURICULARES: Galaxy Buds4 vs AirPods Pro 3",
+      "subtitle": "Comparativa entre **Samsung Galaxy Buds4** y **AirPods Pro 3** para que elijas mejor."
     },
     {
       "type": "content",
       "number": 1,
-      "title": "Gemini y Claude",
-      "body": "Gemini 3.1 Pro ha logrado **superar a Claude** en el ámbito de la inteligencia artificial, estableciendo un nuevo estándar en rendimiento. Este avance no solo resalta la competencia entre tecnologías, sino que también plantea nuevas expectativas sobre las capacidades de la IA en diversas aplicaciones cotidianas."
+      "title": "Sonido impresionante",
+      "body": "Los Samsung Galaxy Buds4 se destacan por su calidad de sonido excepcional, gracias a su tecnología de audio avanzada. Esto los convierte en una opción ideal para los aficionados a la música que buscan una experiencia auditiva envolvente. Su diseño optimizado permite disfrutar de una claridad sonora que resalta cada matiz musical, elevando la experiencia de escucha."
     },
     {
       "type": "content",
       "number": 2,
-      "title": "Mejoras en razonamiento",
-      "body": "La versión 3.1 Pro presenta **mejoras significativas en razonamiento y resolución de problemas**. Esto permite a los usuarios abordar desafíos complejos con mayor eficacia, lo que resulta en decisiones más rápidas y precisas, impactando positivamente en su productividad diaria."
+      "title": "Comodidad y cancelación",
+      "body": "Los AirPods Pro 3 son reconocidos por su comodidad y su eficaz tecnología de cancelación de ruido. Su diseño ergonómico asegura un ajuste perfecto, permitiendo largas horas de uso sin incomodidades. Esta capacidad de bloquear ruidos externos no solo mejora la experiencia auditiva, sino que también facilita la concentración en entornos ruidosos."
     },
     {
       "type": "content",
       "number": 3,
-      "title": "Interacción con usuarios",
-      "body": "Los usuarios ahora pueden **interactuar con Gemini** a través de aplicaciones como Uber y servicios de comida. Esta integración facilita el uso de la IA en la vida cotidiana, transformando tareas ordinarias en experiencias más eficientes y accesibles."
+      "title": "Análisis y popularidad",
+      "body": "Ambos modelos han sido analizados en diversas fuentes, lo que refleja su popularidad en el mercado actual. Las reseñas destacan tanto la calidad de audio como la durabilidad, posicionando a estos auriculares como opciones preferidas. Estas comparativas son útiles para los consumidores que buscan el modelo que mejor se adapte a sus necesidades específicas."
     },
     {
       "type": "content",
       "number": 4,
-      "title": "Modelos de IA flexibles",
-      "body": "En plataformas como **Perplexity**, los usuarios tienen la opción de seleccionar diferentes modelos de IA según sus necesidades específicas. Esta flexibilidad permite personalizar la interacción, asegurando que cada usuario obtenga el máximo beneficio de la tecnología según su contexto."
+      "title": "Batería y conectividad",
+      "body": "La comparación entre los modelos incluye aspectos como la duración de la batería y la conectividad. Los Galaxy Buds4 ofrecen hasta 8 horas de uso continuo, mientras que los AirPods Pro 3 alcanzan hasta 6 horas. La conectividad rápida de ambos modelos es un punto a favor, pero la elección puede depender de los hábitos de uso de cada persona."
     },
     {
       "type": "content",
       "number": 5,
-      "title": "Integración en Android",
-      "body": "La integración de Gemini en **dispositivos Android** promete una experiencia más fluida y autónoma. Esta combinación de hardware y software no solo mejora la usabilidad, sino que también optimiza el acceso a la inteligencia artificial en cualquier momento y lugar."
+      "title": "Diferencias de expertos",
+      "body": "Expertos en tecnología han señalado diferencias significativas entre los dos productos. Los Galaxy Buds4 son valorados por su calidad de sonido superior, mientras que los AirPods Pro 3 son preferidos por su comodidad. Estas opiniones pueden ser determinantes al momento de decidir qué auricular se ajusta mejor a tus prioridades y estilo de vida."
     },
     {
       "type": "content",
       "number": 6,
-      "title": "Auriculares avanzados",
-      "body": "Los nuevos **auriculares de Google** equipados con Gemini ofrecen una experiencia auditiva mejorada gracias a tecnología avanzada. Esta innovación no solo eleva la calidad del sonido, sino que también enriquece la interacción del usuario con su entorno, haciendo la tecnología más inmersiva."
+      "title": "Evolución del mercado",
+      "body": "El mercado de auriculares está en constante cambio, lo que genera un creciente interés por los modelos de última generación. Las innovaciones tecnológicas y los avances en diseño hacen que cada nuevo lanzamiento sea más atractivo. Estar al tanto de estas tendencias te permitirá elegir las mejores opciones que se alineen con tus necesidades y preferencias."
     },
     {
       "type": "cta",
-      "title": "¡No te lo pierdas!",
-      "body": "Guarda este carrusel para estar al tanto de Gemini 3.1 Pro, comenta tu opinión y sigue a **TechTokio ⚡ 30s** para más novedades."
+      "title": "¡No te quedes atrás!",
+      "body": "Guarda este carrusel, comparte tus opiniones y sigue para más comparativas en TechTokio ⚡ 30s."
     }
   ],
-  "caption": "¿Listo para adentrarte en la nueva era de la IA? 💡 Gemini 3.1 Pro redefine cómo interactuamos con la tecnología, haciéndola más accesible y efectiva. ¿Cuál es tu función favorita? ¡Déjanos tu comentario!",
-  "alt_text": "Carrusel informativo sobre Gemini 3.1 Pro de Google, destacando sus avances y capacidades de IA.",
+  "caption": "La batalla entre los mejores auriculares es relevante para consumidores y entusiastas de la tecnología. ¿Prefieres la calidad de sonido de los Galaxy Buds4 o la comodidad de los AirPods Pro 3? ¡Te leo en comentarios!",
+  "alt_text": "Carrusel comparativo entre Samsung Galaxy Buds4 y AirPods Pro 3, destacando características como calidad de sonido, comodidad y duración de batería.",
   "hashtag_suggestions": [
-    "#Gemini31Pro",
-    "#InteligenciaArtificial",
-    "#Google",
+    "#SamsungGalaxyBuds4",
+    "#AirPodsPro3",
+    "#Auriculares",
     "#Tecnología",
-    "#Innovación"
-  ]
+    "#Comparativa"
+  ],
+  "template_name": "dark_purple"
 }

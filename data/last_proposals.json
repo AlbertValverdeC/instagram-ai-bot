@@ -1,0 +1,26 @@
+[
+  {
+    "id": "p1",
+    "angle": "Comparativa entre auriculares de última generación",
+    "hook": "La batalla entre los mejores auriculares es relevante para consumidores y entusiastas de la tecnología.",
+    "caption_preview": "Los Samsung Galaxy Buds4 ofrecen una calidad de sonido impresionante. Los AirPods Pro 3 destacan por su comodidad y tecnología de cancelación de ruido.",
+    "cta": "¿Qué opinas? Te leo en comentarios.",
+    "virality_score": 8
+  },
+  {
+    "id": "p2",
+    "angle": "Samsung Galaxy S26 vs S25: ¿Vale la pena el cambio?",
+    "hook": "Comparar generaciones de dispositivos es crucial para los seguidores de la tecnología y los usuarios interesados en actualizar.",
+    "caption_preview": "El S26 presenta mejoras significativas en rendimiento y cámara. El S25 sigue siendo una opción sólida para quienes buscan calidad.",
+    "cta": "¿Qué opinas? Te leo en comentarios.",
+    "virality_score": 9
+  },
+  {
+    "id": "p3",
+    "angle": "La IA como motor de crecimiento en empresas",
+    "hook": "La adopción de IA en el ámbito empresarial es un tema de interés creciente y relevancia para el futuro de la tecnología.",
+    "caption_preview": "Amadeus reporta un récord de ingresos gracias a la implementación de IA. La IA está ayudando a las empresas a optimizar procesos y mejorar la eficiencia.",
+    "cta": "¿Qué opinas? Te leo en comentarios.",
+    "virality_score": 7
+  }
+]

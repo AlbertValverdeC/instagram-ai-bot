@@ -48,7 +48,9 @@ def api_state():
             if isinstance(loaded, list):
                 proposals = loaded
 
-    slides = sorted(f.name for f in OUTPUT_DIR.glob("slide_*.png"))
+    slides = sorted(
+        f.name for f in list(OUTPUT_DIR.glob("slide_*.jpg")) + list(OUTPUT_DIR.glob("slide_*.png"))
+    )
 
     history = []
     history_file = DATA_DIR / "history.json"

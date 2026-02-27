@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+
 from flask import Blueprint, jsonify, request
 
 from dashboard.auth import require_api_token
@@ -124,7 +126,20 @@ def _publish_post(post_id: int, *, allowed_statuses: set[str], status_error_labe
         from modules.publisher import publish as publish_carousel
         from modules.publisher import save_to_history as save_legacy_history
 
-        image_paths = create_slides(content, topic=topic)
+        # Reuse saved draft slides if available (avoids regenerating AI images)
+        draft_dir = OUTPUT_DIR / "drafts" / str(post_id)
+        saved_slides = sorted(
+            list(draft_dir.glob("slide_*.jpg")) + list(draft_dir.glob("slide_*.png"))
+        ) if draft_dir.exists() else []
+        if saved_slides:
+            # Copy saved draft slides back to OUTPUT_DIR for the publisher
+            for src in saved_slides:
+                shutil.copy2(src, OUTPUT_DIR / src.name)
+            image_paths = [OUTPUT_DIR / src.name for src in saved_slides]
+        else:
+            # No saved slides — regenerate (fallback for legacy drafts)
+            image_paths = create_slides(content, topic=topic)
+
         db_mark_post_publish_attempt(post_id)
         media_id = publish_carousel(image_paths, content, strategy)
         db_mark_post_published(post_id=post_id, media_id=media_id)
@@ -132,6 +147,28 @@ def _publish_post(post_id: int, *, allowed_statuses: set[str], status_error_labe
         return jsonify({"ok": True, "post_id": post_id, "media_id": media_id, "status": "published_active"})
     except Exception as e:
         tag, summary, code = classify_publish_error_text(str(e))
+
+        # Post-error reconciliation: check if IG actually published the post
+        if db_reconcile_pending_posts is not None:
+            try:
+                db_reconcile_pending_posts(limit=60, max_age_hours=72)
+                refreshed = db_get_post(post_id)
+                refreshed_status = str((refreshed or {}).get("status") or "").strip()
+                refreshed_media_id = str((refreshed or {}).get("ig_media_id") or "").strip()
+                if refreshed_status == "published_active" and refreshed_media_id:
+                    return jsonify(
+                        {
+                            "ok": True,
+                            "post_id": post_id,
+                            "media_id": refreshed_media_id,
+                            "status": "published_active",
+                            "reconciled": True,
+                            "warning": f"Post publicado tras error ambiguo: {summary}",
+                        }
+                    )
+            except Exception:
+                pass
+
         try:
             db_mark_post_publish_error(
                 post_id=post_id,
@@ -144,8 +181,15 @@ def _publish_post(post_id: int, *, allowed_statuses: set[str], status_error_labe
         return jsonify({"error": summary, "tag": tag, "code": code, "detail": str(e)}), 500
     finally:
         try:
-            for p in OUTPUT_DIR.glob("slide_*.png"):
+            for p in list(OUTPUT_DIR.glob("slide_*.png")) + list(OUTPUT_DIR.glob("slide_*.jpg")):
                 p.unlink(missing_ok=True)
+        except Exception:
+            pass
+        # Clean up saved draft slides after publish attempt
+        draft_dir = OUTPUT_DIR / "drafts" / str(post_id)
+        try:
+            if draft_dir.exists():
+                shutil.rmtree(draft_dir, ignore_errors=True)
         except Exception:
             pass
 

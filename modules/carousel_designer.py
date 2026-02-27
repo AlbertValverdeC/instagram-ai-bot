@@ -1147,6 +1147,8 @@ def create(content: dict, template_index: int | None = None, topic: dict | None 
     # Clear previous output
     for f in OUTPUT_DIR.glob("slide_*.png"):
         f.unlink()
+    for f in OUTPUT_DIR.glob("slide_*.jpg"):
+        f.unlink()
 
     image_paths = []
     for i, slide in enumerate(slides):
@@ -1163,8 +1165,8 @@ def create(content: dict, template_index: int | None = None, topic: dict | None 
         rgb_img = Image.new("RGB", img.size, (0, 0, 0))
         rgb_img.paste(img, mask=img.split()[3])
 
-        path = OUTPUT_DIR / f"slide_{i:02d}.png"
-        rgb_img.save(path, "PNG", quality=95)
+        path = OUTPUT_DIR / f"slide_{i:02d}.jpg"
+        rgb_img.save(path, "JPEG", quality=85)
         image_paths.append(path)
         logger.info(f"Saved: {path.name}")
 

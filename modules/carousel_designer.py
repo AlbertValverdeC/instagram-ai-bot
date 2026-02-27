@@ -10,13 +10,12 @@ Creates 1080x1350px slides with:
 """
 
 import logging
+import re
 import textwrap
 from collections import deque
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
-
-import re
+from PIL import Image, ImageDraw, ImageFont
 
 from config.settings import (
     BRAND_LOGO_PATH,
@@ -182,7 +181,13 @@ def _draw_text_wrapped(
                 continue
 
             current_y = _draw_text_wrapped(
-                draw, part, x, current_y, max_width, font, fill,
+                draw,
+                part,
+                x,
+                current_y,
+                max_width,
+                font,
+                fill,
                 line_spacing=line_spacing,
                 highlight_color=highlight_color,
             )
@@ -194,7 +199,7 @@ def _draw_text_wrapped(
 
     # Strip ** markers if no highlight color — render plain
     if highlight_color is None:
-        clean = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+        clean = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
         avg_char_width = font.size * 0.55
         chars_per_line = max(1, int(max_width / avg_char_width))
         lines = textwrap.wrap(clean, width=chars_per_line)
@@ -453,6 +458,7 @@ def _draw_progress_dots(draw: ImageDraw.Draw, current: int, total: int, template
 
 # ── Slide Creators ───────────────────────────────────────────────────────────
 
+
 def _parse_bicolor_text(text: str) -> list[tuple[str, bool]]:
     """Parse text with **highlight** markers into segments.
 
@@ -461,7 +467,7 @@ def _parse_bicolor_text(text: str) -> list[tuple[str, bool]]:
     → [("AQUÍ TIENES LAS ", False), ("NOTICIAS MÁS IMPORTANTES", True), (" DE HOY", False)]
     """
     segments = []
-    parts = re.split(r'\*\*(.+?)\*\*', text)
+    parts = re.split(r"\*\*(.+?)\*\*", text)
     for i, part in enumerate(parts):
         if part:
             segments.append((part, i % 2 == 1))  # odd indices are inside **
@@ -492,8 +498,14 @@ def _draw_bicolor_text_centered(
                 current_y += max(12, int(font.size * 0.45))
                 continue
             current_y = _draw_bicolor_text_centered(
-                draw, part, current_y, max_width, font,
-                normal_color, highlight_color, line_spacing=line_spacing,
+                draw,
+                part,
+                current_y,
+                max_width,
+                font,
+                normal_color,
+                highlight_color,
+                line_spacing=line_spacing,
             )
             if idx < len(parts) - 1 and parts[idx + 1].strip():
                 current_y += max(4, int(font.size * 0.12))
@@ -506,7 +518,7 @@ def _draw_bicolor_text_centered(
     words = []
     for seg_text, is_hl in segments:
         seg_words = seg_text.split()
-        for j, w in enumerate(seg_words):
+        for _j, w in enumerate(seg_words):
             words.append((w, is_hl))
 
     # Wrap into lines based on max_width
@@ -547,14 +559,14 @@ def _draw_bicolor_text_centered(
 
         # Shadow pass
         cursor_x = x
-        for j, (word, is_hl) in enumerate(line_words):
+        for _j, (word, _is_hl) in enumerate(line_words):
             draw.text((cursor_x + shadow_offset, current_y + shadow_offset), word, font=font, fill=shadow_color)
             word_bbox = draw.textbbox((0, 0), word, font=font)
             cursor_x += word_bbox[2] - word_bbox[0] + space_width
 
         # Color pass
         cursor_x = x
-        for j, (word, is_hl) in enumerate(line_words):
+        for _j, (word, is_hl) in enumerate(line_words):
             color = highlight_color if is_hl else normal_color
             draw.text((cursor_x, current_y), word, font=font, fill=color)
             word_bbox = draw.textbbox((0, 0), word, font=font)
@@ -607,7 +619,7 @@ def _estimate_wrapped_line_count(
     font: ImageFont.FreeTypeFont,
 ) -> int:
     """Estimate wrapped line count for plain text rendered by _draw_text_wrapped."""
-    clean = re.sub(r'\*\*(.+?)\*\*', r'\1', str(text or ""))
+    clean = re.sub(r"\*\*(.+?)\*\*", r"\1", str(text or ""))
     if not clean.strip():
         return 0
     if "\n" in clean:
@@ -692,7 +704,7 @@ def _draw_text_centered_wrapped(
     centered on the canvas. Used for cover titles to guarantee consistent
     centering regardless of line count.
     """
-    clean = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    clean = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
 
     # Pixel-based word wrapping for precision
     words = clean.split()
@@ -788,13 +800,13 @@ def _create_cover_slide(
     max_w = SLIDE_WIDTH - 2 * px  # 920px
 
     PREFERRED_TITLE_SIZE = FONT_SIZES["cover_title"]  # 88pt preferred
-    MIN_TITLE_SIZE = 48                                # go small enough to avoid "..."
-    TITLE_SIZE_STEP = 4                                # decrease in steps
-    SUBTITLE_SIZE = 44                                 # fixed
-    TITLE_GAP = 20                                     # gap title→subtitle
-    PREFERRED_BLOCK_Y = int(SLIDE_HEIGHT * 0.58)       # preferred start (short titles)
-    MIN_BLOCK_Y = int(SLIDE_HEIGHT * 0.44)             # earliest allowed start (long titles)
-    CTA_Y = int(SLIDE_HEIGHT * 0.945)                  # fixed CTA position
+    MIN_TITLE_SIZE = 48  # go small enough to avoid "..."
+    TITLE_SIZE_STEP = 4  # decrease in steps
+    SUBTITLE_SIZE = 44  # fixed
+    TITLE_GAP = 20  # gap title→subtitle
+    PREFERRED_BLOCK_Y = int(SLIDE_HEIGHT * 0.58)  # preferred start (short titles)
+    MIN_BLOCK_Y = int(SLIDE_HEIGHT * 0.44)  # earliest allowed start (long titles)
+    CTA_Y = int(SLIDE_HEIGHT * 0.945)  # fixed CTA position
     # Reserve for subtitle (1 line) + gap + margin above CTA
     SUBTITLE_RESERVE = SUBTITLE_SIZE + TITLE_GAP + 40
 
@@ -807,7 +819,7 @@ def _create_cover_slide(
     def _count_title_lines(font_size: int) -> int:
         """Count how many lines the title wraps to at a given font size."""
         f = _get_font(font_size, bold=True)
-        clean = re.sub(r'\*\*(.+?)\*\*', r'\1', title_text)
+        clean = re.sub(r"\*\*(.+?)\*\*", r"\1", title_text)
         words = clean.split()
         if not words:
             return 0
@@ -851,8 +863,13 @@ def _create_cover_slide(
 
     title_font = _get_font(title_size, bold=True)
     title_end_y = _draw_text_centered_wrapped(
-        draw, title_text, block_y, max_w,
-        title_font, template["accent_color"], line_spacing=1.15,
+        draw,
+        title_text,
+        block_y,
+        max_w,
+        title_font,
+        template["accent_color"],
+        line_spacing=1.15,
     )
 
     # ── Subtitle: always centered, always 44pt, fixed gap below title ───────
@@ -878,7 +895,7 @@ def _create_cover_slide(
 
         # Last resort: truncate subtitle if still overflows
         if sub_lines_needed > max_subtitle_lines:
-            words = re.sub(r'\*\*(.+?)\*\*', r'\1', subtitle_text).split()
+            words = re.sub(r"\*\*(.+?)\*\*", r"\1", subtitle_text).split()
             lo, hi = 1, len(words)
             while lo < hi:
                 mid = (lo + hi + 1) // 2
@@ -890,8 +907,13 @@ def _create_cover_slide(
             subtitle_text = " ".join(words[:lo]) + "..."
 
         _draw_bicolor_text_centered(
-            draw, subtitle_text, subtitle_y, max_w,
-            subtitle_font, template["title_color"], template["accent_color"],
+            draw,
+            subtitle_text,
+            subtitle_y,
+            max_w,
+            subtitle_font,
+            template["title_color"],
+            template["accent_color"],
             line_spacing=1.20,
         )
 
@@ -933,7 +955,10 @@ def _apply_darkened_background(img: Image.Image, draw: ImageDraw.Draw, template:
 
 
 def _create_content_slide(
-    slide: dict, template: dict, slide_index: int, total_slides: int,
+    slide: dict,
+    template: dict,
+    slide_index: int,
+    total_slides: int,
     ai_background: Image.Image | None = None,
 ) -> Image.Image:
     """Create a content slide with title + body text."""
@@ -955,8 +980,13 @@ def _create_content_slide(
     title_font = _get_font(title_size, bold=True)
     title_y = int(SLIDE_HEIGHT * LAYOUT["title_y"])
     end_y = _draw_text_wrapped(
-        draw, slide.get("title", ""), px, title_y, max_w,
-        title_font, template["title_color"],
+        draw,
+        slide.get("title", ""),
+        px,
+        title_y,
+        max_w,
+        title_font,
+        template["title_color"],
         highlight_color=template["accent_color"],
     )
 
@@ -994,8 +1024,14 @@ def _create_content_slide(
         )
 
     _draw_text_wrapped(
-        draw, slide.get("body", ""), px, body_y, max_w,
-        body_font, template["body_color"], line_spacing=LAYOUT["line_spacing"],
+        draw,
+        slide.get("body", ""),
+        px,
+        body_y,
+        max_w,
+        body_font,
+        template["body_color"],
+        line_spacing=LAYOUT["line_spacing"],
         highlight_color=template["accent_color"],
     )
 
@@ -1007,7 +1043,9 @@ def _create_content_slide(
 
 
 def _create_cta_slide(
-    slide: dict, template: dict, total_slides: int,
+    slide: dict,
+    template: dict,
+    total_slides: int,
     ai_background: Image.Image | None = None,
 ) -> Image.Image:
     """Create the call-to-action slide."""
@@ -1025,8 +1063,13 @@ def _create_cta_slide(
     title_font = _get_font(FONT_SIZES["cta_title"], bold=True)
     title_y = int(SLIDE_HEIGHT * 0.30)
     end_y = _draw_text_wrapped(
-        draw, slide.get("title", ""), px, title_y, max_w,
-        title_font, template["accent_color"],
+        draw,
+        slide.get("title", ""),
+        px,
+        title_y,
+        max_w,
+        title_font,
+        template["accent_color"],
         highlight_color=template["title_color"],
     )
 
@@ -1037,8 +1080,14 @@ def _create_cta_slide(
     body_font = _get_font(FONT_SIZES["cta_body"])
     body_y = end_y + 55
     _draw_text_wrapped(
-        draw, slide.get("body", ""), px, body_y, max_w,
-        body_font, template["body_color"], line_spacing=1.6,
+        draw,
+        slide.get("body", ""),
+        px,
+        body_y,
+        max_w,
+        body_font,
+        template["body_color"],
+        line_spacing=1.6,
         highlight_color=template["accent_color"],
     )
 
@@ -1051,8 +1100,7 @@ def _create_cta_slide(
 
     # Accent underline under handle
     draw.rectangle(
-        [handle_x, handle_y + (bbox[3] - bbox[1]) + 8,
-         handle_x + hw, handle_y + (bbox[3] - bbox[1]) + 12],
+        [handle_x, handle_y + (bbox[3] - bbox[1]) + 8, handle_x + hw, handle_y + (bbox[3] - bbox[1]) + 12],
         fill=template["accent_color"],
     )
     draw.text(
@@ -1068,6 +1116,7 @@ def _create_cta_slide(
 
 
 # ── Main Entry Point ────────────────────────────────────────────────────────
+
 
 def create(content: dict, template_index: int | None = None, topic: dict | None = None) -> list[Path]:
     """
@@ -1091,6 +1140,7 @@ def create(content: dict, template_index: int | None = None, topic: dict | None 
         # Rotate based on last published post's template (DB history)
         try:
             from modules.post_store import get_last_used_template_name
+
             last_name = get_last_used_template_name()
             if last_name:
                 names = [t["name"] for t in TEMPLATES]
@@ -1118,11 +1168,13 @@ def create(content: dict, template_index: int | None = None, topic: dict | None 
             cover_text = cover_slide.get("title", "") if cover_slide else ""
 
             from modules.prompt_director import PromptDirector
+
             director = PromptDirector()
             image_prompt = director.craft_cover_image_prompt(topic, cover_text, template)
 
             if image_prompt:
                 from modules.image_generator import generate_cover_background
+
                 topic_hint = topic.get("topic_en", topic.get("topic", "technology"))
                 ai_cover_bg = generate_cover_background(image_prompt, topic_hint=topic_hint)
 
@@ -1136,6 +1188,7 @@ def create(content: dict, template_index: int | None = None, topic: dict | None 
         # Generate shared content/CTA background
         try:
             from modules.image_generator import generate_content_background
+
             ai_content_bg = generate_content_background(topic)
             if ai_content_bg:
                 logger.info("AI content background ready")

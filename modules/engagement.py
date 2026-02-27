@@ -146,10 +146,7 @@ def get_strategy(topic: dict, content: dict) -> dict:
         "timezone": TIMEZONE,
     }
 
-    logger.info(
-        f"Strategy: {day_type}, post at {posting_time} {TIMEZONE}, "
-        f"{len(hashtags_str.split())} hashtags"
-    )
+    logger.info(f"Strategy: {day_type}, post at {posting_time} {TIMEZONE}, {len(hashtags_str.split())} hashtags")
     return strategy
 
 

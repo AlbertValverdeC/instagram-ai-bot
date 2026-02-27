@@ -1,6 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from "react";
 
-export function usePolling(callback: () => void | Promise<void>, intervalMs: number, active: boolean) {
+export function usePolling(
+  callback: () => void | Promise<void>,
+  intervalMs: number,
+  active: boolean,
+) {
   const cbRef = useRef(callback);
 
   useEffect(() => {

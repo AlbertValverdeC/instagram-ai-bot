@@ -14,7 +14,13 @@ body,
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
 }
 
 /* Custom scrollbar for console */
@@ -30,4 +36,17 @@ body {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #3e4c5a;
+}
+
+/* Activity monitor progress bar */
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+.animate-progress {
+  animation: progress-indeterminate 1.5s ease-in-out infinite;
 }

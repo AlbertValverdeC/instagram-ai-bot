@@ -14,7 +14,7 @@ import json
 import logging
 import re
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import (
@@ -33,13 +33,12 @@ from sqlalchemy import (
     delete,
     func,
     inspect,
-    text,
     select,
+    text,
     update,
 )
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from config.settings import DATABASE_URL, DUPLICATE_TOPIC_WINDOW_DAYS, IS_CLOUD_RUN
 
@@ -154,20 +153,20 @@ content_queue_table = Table(
 )
 
 DEFAULT_SCHEDULE = {
-    "monday":    {"enabled": True, "time": "08:30"},
-    "tuesday":   {"enabled": True, "time": "08:30"},
+    "monday": {"enabled": True, "time": "08:30"},
+    "tuesday": {"enabled": True, "time": "08:30"},
     "wednesday": {"enabled": True, "time": "08:30"},
-    "thursday":  {"enabled": True, "time": "08:30"},
-    "friday":    {"enabled": True, "time": "08:30"},
-    "saturday":  {"enabled": True, "time": "10:00"},
-    "sunday":    {"enabled": False, "time": None},
+    "thursday": {"enabled": True, "time": "08:30"},
+    "friday": {"enabled": True, "time": "08:30"},
+    "saturday": {"enabled": True, "time": "10:00"},
+    "sunday": {"enabled": False, "time": None},
 }
 
 DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _parse_maybe_datetime(value) -> datetime | None:
@@ -319,8 +318,7 @@ def get_db_runtime_info() -> dict:
     warning = None
     if IS_CLOUD_RUN and is_sqlite:
         warning = (
-            "SQLite en Cloud Run no es persistente entre reinicios/despliegues. "
-            "Configura DATABASE_URL con PostgreSQL."
+            "SQLite en Cloud Run no es persistente entre reinicios/despliegues. Configura DATABASE_URL con PostgreSQL."
         )
 
     return {
@@ -365,23 +363,10 @@ def _run_schema_migrations():
             conn.execute(text(sql))
 
         # Backfill sensible defaults for nullable historical rows.
+        conn.execute(text("UPDATE posts SET publish_attempts = 0 WHERE publish_attempts IS NULL"))
+        conn.execute(text("UPDATE posts SET ig_status = 'unknown' WHERE ig_status IS NULL OR ig_status = ''"))
         conn.execute(
-            text(
-                "UPDATE posts SET publish_attempts = 0 "
-                "WHERE publish_attempts IS NULL"
-            )
-        )
-        conn.execute(
-            text(
-                "UPDATE posts SET ig_status = 'unknown' "
-                "WHERE ig_status IS NULL OR ig_status = ''"
-            )
-        )
-        conn.execute(
-            text(
-                "UPDATE posts SET status = :active "
-                "WHERE status = :legacy"
-            ),
+            text("UPDATE posts SET status = :active WHERE status = :legacy"),
             {"active": POST_STATUS_PUBLISHED_ACTIVE, "legacy": POST_STATUS_PUBLISHED},
         )
 
@@ -438,20 +423,24 @@ def find_duplicate_candidate(
             if not canon or not shash:
                 continue
 
-            row = conn.execute(
-                select(
-                    posts_table.c.id,
-                    posts_table.c.topic,
-                    posts_table.c.ig_media_id,
-                    posts_table.c.published_at,
-                    post_sources_table.c.source_url,
+            row = (
+                conn.execute(
+                    select(
+                        posts_table.c.id,
+                        posts_table.c.topic,
+                        posts_table.c.ig_media_id,
+                        posts_table.c.published_at,
+                        post_sources_table.c.source_url,
+                    )
+                    .join(post_sources_table, post_sources_table.c.post_id == posts_table.c.id)
+                    .where(post_sources_table.c.source_hash == shash)
+                    .where(posts_table.c.status.in_(list(PUBLISHED_STATUSES)))
+                    .order_by(posts_table.c.published_at.desc(), posts_table.c.id.desc())
+                    .limit(1)
                 )
-                .join(post_sources_table, post_sources_table.c.post_id == posts_table.c.id)
-                .where(post_sources_table.c.source_hash == shash)
-                .where(posts_table.c.status.in_(list(PUBLISHED_STATUSES)))
-                .order_by(posts_table.c.published_at.desc(), posts_table.c.id.desc())
-                .limit(1)
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
             if row:
                 return {
                     "kind": "source_url",
@@ -459,28 +448,30 @@ def find_duplicate_candidate(
                     "existing_post_id": row["id"],
                     "existing_topic": row["topic"],
                     "existing_media_id": row["ig_media_id"],
-                    "existing_published_at": (
-                        row["published_at"].isoformat() if row["published_at"] else None
-                    ),
+                    "existing_published_at": (row["published_at"].isoformat() if row["published_at"] else None),
                 }
 
         # Soft duplicate by topic hash in recent window.
         thash = topic_hash(topic)
         if thash:
             cutoff = _utc_now() - timedelta(days=window_days)
-            row = conn.execute(
-                select(
-                    posts_table.c.id,
-                    posts_table.c.topic,
-                    posts_table.c.ig_media_id,
-                    posts_table.c.published_at,
+            row = (
+                conn.execute(
+                    select(
+                        posts_table.c.id,
+                        posts_table.c.topic,
+                        posts_table.c.ig_media_id,
+                        posts_table.c.published_at,
+                    )
+                    .where(posts_table.c.topic_hash == thash)
+                    .where(posts_table.c.status.in_(list(PUBLISHED_STATUSES)))
+                    .where(posts_table.c.published_at >= cutoff)
+                    .order_by(posts_table.c.published_at.desc(), posts_table.c.id.desc())
+                    .limit(1)
                 )
-                .where(posts_table.c.topic_hash == thash)
-                .where(posts_table.c.status.in_(list(PUBLISHED_STATUSES)))
-                .where(posts_table.c.published_at >= cutoff)
-                .order_by(posts_table.c.published_at.desc(), posts_table.c.id.desc())
-                .limit(1)
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
             if row:
                 return {
                     "kind": "topic_hash",
@@ -488,9 +479,7 @@ def find_duplicate_candidate(
                     "existing_post_id": row["id"],
                     "existing_topic": row["topic"],
                     "existing_media_id": row["ig_media_id"],
-                    "existing_published_at": (
-                        row["published_at"].isoformat() if row["published_at"] else None
-                    ),
+                    "existing_published_at": (row["published_at"].isoformat() if row["published_at"] else None),
                     "window_days": window_days,
                 }
     return None
@@ -564,11 +553,7 @@ def create_generated_post(
         )
         post_id = int(insert_result.inserted_primary_key[0])
         source_count = _insert_post_sources(conn, post_id=post_id, source_urls=source_urls)
-        conn.execute(
-            posts_table.update()
-            .where(posts_table.c.id == post_id)
-            .values(source_count=source_count)
-        )
+        conn.execute(posts_table.update().where(posts_table.c.id == post_id).values(source_count=source_count))
     return post_id
 
 
@@ -690,56 +675,68 @@ def get_post(post_id: int) -> dict | None:
     ensure_schema()
     safe_post_id = int(post_id)
     with get_engine().begin() as conn:
-        row = conn.execute(
-            select(
-                posts_table.c.id,
-                posts_table.c.ig_media_id,
-                posts_table.c.topic,
-                posts_table.c.caption,
-                posts_table.c.virality_score,
-                posts_table.c.topic_payload,
-                posts_table.c.proposal_payload,
-                posts_table.c.content_payload,
-                posts_table.c.strategy_payload,
-                posts_table.c.status,
-                posts_table.c.ig_status,
-                posts_table.c.source_count,
-                posts_table.c.publish_attempts,
-                posts_table.c.last_error_tag,
-                posts_table.c.last_error_code,
-                posts_table.c.last_error_message,
-                posts_table.c.last_publish_attempt_at,
-                posts_table.c.ig_last_checked_at,
-                posts_table.c.published_at,
-                posts_table.c.created_at,
+        row = (
+            conn.execute(
+                select(
+                    posts_table.c.id,
+                    posts_table.c.ig_media_id,
+                    posts_table.c.topic,
+                    posts_table.c.caption,
+                    posts_table.c.virality_score,
+                    posts_table.c.topic_payload,
+                    posts_table.c.proposal_payload,
+                    posts_table.c.content_payload,
+                    posts_table.c.strategy_payload,
+                    posts_table.c.status,
+                    posts_table.c.ig_status,
+                    posts_table.c.source_count,
+                    posts_table.c.publish_attempts,
+                    posts_table.c.last_error_tag,
+                    posts_table.c.last_error_code,
+                    posts_table.c.last_error_message,
+                    posts_table.c.last_publish_attempt_at,
+                    posts_table.c.ig_last_checked_at,
+                    posts_table.c.published_at,
+                    posts_table.c.created_at,
+                )
+                .where(posts_table.c.id == safe_post_id)
+                .limit(1)
             )
-            .where(posts_table.c.id == safe_post_id)
-            .limit(1)
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         if not row:
             return None
 
-        src_rows = conn.execute(
-            select(post_sources_table.c.source_url)
-            .where(post_sources_table.c.post_id == safe_post_id)
-            .order_by(post_sources_table.c.id.asc())
-        ).mappings().all()
-
-        metric_row = conn.execute(
-            select(
-                post_metrics_table.c.collected_at,
-                post_metrics_table.c.impressions,
-                post_metrics_table.c.reach,
-                post_metrics_table.c.likes,
-                post_metrics_table.c.comments,
-                post_metrics_table.c.saves,
-                post_metrics_table.c.shares,
-                post_metrics_table.c.engagement_rate,
+        src_rows = (
+            conn.execute(
+                select(post_sources_table.c.source_url)
+                .where(post_sources_table.c.post_id == safe_post_id)
+                .order_by(post_sources_table.c.id.asc())
             )
-            .where(post_metrics_table.c.post_id == safe_post_id)
-            .order_by(post_metrics_table.c.collected_at.desc(), post_metrics_table.c.id.desc())
-            .limit(1)
-        ).mappings().first()
+            .mappings()
+            .all()
+        )
+
+        metric_row = (
+            conn.execute(
+                select(
+                    post_metrics_table.c.collected_at,
+                    post_metrics_table.c.impressions,
+                    post_metrics_table.c.reach,
+                    post_metrics_table.c.likes,
+                    post_metrics_table.c.comments,
+                    post_metrics_table.c.saves,
+                    post_metrics_table.c.shares,
+                    post_metrics_table.c.engagement_rate,
+                )
+                .where(post_metrics_table.c.post_id == safe_post_id)
+                .order_by(post_metrics_table.c.collected_at.desc(), post_metrics_table.c.id.desc())
+                .limit(1)
+            )
+            .mappings()
+            .first()
+        )
 
     out = dict(row)
     for key in ("last_publish_attempt_at", "ig_last_checked_at", "published_at", "created_at"):
@@ -768,20 +765,24 @@ def list_retryable_posts(limit: int = 20) -> list[dict]:
     ensure_schema()
     safe_limit = max(1, min(int(limit or 20), 200))
     with get_engine().begin() as conn:
-        rows = conn.execute(
-            select(
-                posts_table.c.id,
-                posts_table.c.topic,
-                posts_table.c.status,
-                posts_table.c.publish_attempts,
-                posts_table.c.last_error_tag,
-                posts_table.c.last_error_message,
-                posts_table.c.created_at,
+        rows = (
+            conn.execute(
+                select(
+                    posts_table.c.id,
+                    posts_table.c.topic,
+                    posts_table.c.status,
+                    posts_table.c.publish_attempts,
+                    posts_table.c.last_error_tag,
+                    posts_table.c.last_error_message,
+                    posts_table.c.created_at,
+                )
+                .where(posts_table.c.status.in_(list(RETRYABLE_STATUSES)))
+                .order_by(posts_table.c.created_at.desc(), posts_table.c.id.desc())
+                .limit(safe_limit)
             )
-            .where(posts_table.c.status.in_(list(RETRYABLE_STATUSES)))
-            .order_by(posts_table.c.created_at.desc(), posts_table.c.id.desc())
-            .limit(safe_limit)
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
     return [dict(r) for r in rows]
 
 
@@ -802,27 +803,28 @@ def list_pending_posts_for_ig_reconcile(
     cutoff = _utc_now() - timedelta(hours=safe_hours)
 
     with get_engine().begin() as conn:
-        rows = conn.execute(
-            select(
-                posts_table.c.id,
-                posts_table.c.topic,
-                posts_table.c.caption,
-                posts_table.c.status,
-                posts_table.c.publish_attempts,
-                posts_table.c.created_at,
-                posts_table.c.last_publish_attempt_at,
+        rows = (
+            conn.execute(
+                select(
+                    posts_table.c.id,
+                    posts_table.c.topic,
+                    posts_table.c.caption,
+                    posts_table.c.status,
+                    posts_table.c.publish_attempts,
+                    posts_table.c.created_at,
+                    posts_table.c.last_publish_attempt_at,
+                )
+                .where(posts_table.c.status.in_(list(RETRYABLE_STATUSES)))
+                .where((posts_table.c.ig_media_id.is_(None)) | (posts_table.c.ig_media_id == ""))
+                .where(posts_table.c.caption.is_not(None))
+                .where(posts_table.c.caption != "")
+                .where(posts_table.c.created_at >= cutoff)
+                .order_by(posts_table.c.created_at.desc(), posts_table.c.id.desc())
+                .limit(safe_limit)
             )
-            .where(posts_table.c.status.in_(list(RETRYABLE_STATUSES)))
-            .where(
-                (posts_table.c.ig_media_id.is_(None))
-                | (posts_table.c.ig_media_id == "")
-            )
-            .where(posts_table.c.caption.is_not(None))
-            .where(posts_table.c.caption != "")
-            .where(posts_table.c.created_at >= cutoff)
-            .order_by(posts_table.c.created_at.desc(), posts_table.c.id.desc())
-            .limit(safe_limit)
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
     return [dict(r) for r in rows]
 
 
@@ -856,21 +858,25 @@ def list_posts_for_metrics_sync(limit: int = 50) -> list[dict]:
     ensure_schema()
     safe_limit = max(1, min(int(limit or 50), 500))
     with get_engine().begin() as conn:
-        rows = conn.execute(
-            select(
-                posts_table.c.id,
-                posts_table.c.ig_media_id,
-                posts_table.c.topic,
-                posts_table.c.published_at,
-                posts_table.c.status,
-                posts_table.c.ig_status,
+        rows = (
+            conn.execute(
+                select(
+                    posts_table.c.id,
+                    posts_table.c.ig_media_id,
+                    posts_table.c.topic,
+                    posts_table.c.published_at,
+                    posts_table.c.status,
+                    posts_table.c.ig_status,
+                )
+                .where(posts_table.c.status.in_(list(PUBLISHED_STATUSES)))
+                .where(posts_table.c.ig_media_id.is_not(None))
+                .where(posts_table.c.ig_media_id != "")
+                .order_by(posts_table.c.published_at.desc(), posts_table.c.id.desc())
+                .limit(safe_limit)
             )
-            .where(posts_table.c.status.in_(list(PUBLISHED_STATUSES)))
-            .where(posts_table.c.ig_media_id.is_not(None))
-            .where(posts_table.c.ig_media_id != "")
-            .order_by(posts_table.c.published_at.desc(), posts_table.c.id.desc())
-            .limit(safe_limit)
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
     return [dict(r) for r in rows]
 
 
@@ -935,9 +941,11 @@ def save_metrics_snapshot_by_media_id(
         return None
 
     with get_engine().begin() as conn:
-        row = conn.execute(
-            select(posts_table.c.id).where(posts_table.c.ig_media_id == media_id).limit(1)
-        ).mappings().first()
+        row = (
+            conn.execute(select(posts_table.c.id).where(posts_table.c.ig_media_id == media_id).limit(1))
+            .mappings()
+            .first()
+        )
     if not row:
         return None
 
@@ -955,9 +963,11 @@ def mark_post_ig_deleted_by_media_id(ig_media_id: str, *, reason: str | None = N
     if not media_id:
         return False
     with get_engine().begin() as conn:
-        row = conn.execute(
-            select(posts_table.c.id).where(posts_table.c.ig_media_id == media_id).limit(1)
-        ).mappings().first()
+        row = (
+            conn.execute(select(posts_table.c.id).where(posts_table.c.ig_media_id == media_id).limit(1))
+            .mappings()
+            .first()
+        )
     if not row:
         return False
     mark_post_ig_deleted(post_id=int(row["id"]), reason=reason)
@@ -970,9 +980,11 @@ def mark_post_ig_active_by_media_id(ig_media_id: str) -> bool:
     if not media_id:
         return False
     with get_engine().begin() as conn:
-        row = conn.execute(
-            select(posts_table.c.id).where(posts_table.c.ig_media_id == media_id).limit(1)
-        ).mappings().first()
+        row = (
+            conn.execute(select(posts_table.c.id).where(posts_table.c.ig_media_id == media_id).limit(1))
+            .mappings()
+            .first()
+        )
     if not row:
         return False
     mark_post_ig_active(post_id=int(row["id"]))
@@ -983,51 +995,63 @@ def list_posts(limit: int = 50) -> list[dict]:
     ensure_schema()
     safe_limit = max(1, min(int(limit or 50), 200))
     with get_engine().begin() as conn:
-        post_rows = conn.execute(
-            select(
-                posts_table.c.id,
-                posts_table.c.ig_media_id,
-                posts_table.c.topic,
-                posts_table.c.virality_score,
-                posts_table.c.status,
-                posts_table.c.ig_status,
-                posts_table.c.source_count,
-                posts_table.c.publish_attempts,
-                posts_table.c.last_publish_attempt_at,
-                posts_table.c.last_error_tag,
-                posts_table.c.last_error_code,
-                posts_table.c.last_error_message,
-                posts_table.c.ig_last_checked_at,
-                posts_table.c.published_at,
-                posts_table.c.created_at,
+        post_rows = (
+            conn.execute(
+                select(
+                    posts_table.c.id,
+                    posts_table.c.ig_media_id,
+                    posts_table.c.topic,
+                    posts_table.c.virality_score,
+                    posts_table.c.status,
+                    posts_table.c.ig_status,
+                    posts_table.c.source_count,
+                    posts_table.c.publish_attempts,
+                    posts_table.c.last_publish_attempt_at,
+                    posts_table.c.last_error_tag,
+                    posts_table.c.last_error_code,
+                    posts_table.c.last_error_message,
+                    posts_table.c.ig_last_checked_at,
+                    posts_table.c.published_at,
+                    posts_table.c.created_at,
+                )
+                .order_by(posts_table.c.created_at.desc(), posts_table.c.id.desc())
+                .limit(safe_limit)
             )
-            .order_by(posts_table.c.created_at.desc(), posts_table.c.id.desc())
-            .limit(safe_limit)
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         if not post_rows:
             return []
 
         post_ids = [row["id"] for row in post_rows]
-        src_rows = conn.execute(
-            select(post_sources_table.c.post_id, post_sources_table.c.source_url)
-            .where(post_sources_table.c.post_id.in_(post_ids))
-            .order_by(post_sources_table.c.id.asc())
-        ).mappings().all()
-        metric_rows = conn.execute(
-            select(
-                post_metrics_table.c.post_id,
-                post_metrics_table.c.collected_at,
-                post_metrics_table.c.impressions,
-                post_metrics_table.c.reach,
-                post_metrics_table.c.likes,
-                post_metrics_table.c.comments,
-                post_metrics_table.c.saves,
-                post_metrics_table.c.shares,
-                post_metrics_table.c.engagement_rate,
+        src_rows = (
+            conn.execute(
+                select(post_sources_table.c.post_id, post_sources_table.c.source_url)
+                .where(post_sources_table.c.post_id.in_(post_ids))
+                .order_by(post_sources_table.c.id.asc())
             )
-            .where(post_metrics_table.c.post_id.in_(post_ids))
-            .order_by(post_metrics_table.c.collected_at.desc(), post_metrics_table.c.id.desc())
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
+        metric_rows = (
+            conn.execute(
+                select(
+                    post_metrics_table.c.post_id,
+                    post_metrics_table.c.collected_at,
+                    post_metrics_table.c.impressions,
+                    post_metrics_table.c.reach,
+                    post_metrics_table.c.likes,
+                    post_metrics_table.c.comments,
+                    post_metrics_table.c.saves,
+                    post_metrics_table.c.shares,
+                    post_metrics_table.c.engagement_rate,
+                )
+                .where(post_metrics_table.c.post_id.in_(post_ids))
+                .order_by(post_metrics_table.c.collected_at.desc(), post_metrics_table.c.id.desc())
+            )
+            .mappings()
+            .all()
+        )
 
     sources_by_post = {}
     for row in src_rows:
@@ -1039,9 +1063,7 @@ def list_posts(limit: int = 50) -> list[dict]:
         if post_id in latest_metrics_by_post:
             continue
         latest_metrics_by_post[post_id] = {
-            "metrics_collected_at": (
-                row["collected_at"].isoformat() if row["collected_at"] else None
-            ),
+            "metrics_collected_at": (row["collected_at"].isoformat() if row["collected_at"] else None),
             "impressions": row["impressions"],
             "reach": row["reach"],
             "likes": row["likes"],
@@ -1068,15 +1090,11 @@ def list_posts(limit: int = 50) -> list[dict]:
                 "virality_score": row["virality_score"],
                 "source_count": row["source_count"],
                 "publish_attempts": row["publish_attempts"],
-                "last_publish_attempt_at": (
-                    last_publish_attempt_at.isoformat() if last_publish_attempt_at else None
-                ),
+                "last_publish_attempt_at": (last_publish_attempt_at.isoformat() if last_publish_attempt_at else None),
                 "last_error_tag": row["last_error_tag"],
                 "last_error_code": row["last_error_code"],
                 "last_error_message": row["last_error_message"],
-                "ig_last_checked_at": (
-                    ig_last_checked_at.isoformat() if ig_last_checked_at else None
-                ),
+                "ig_last_checked_at": (ig_last_checked_at.isoformat() if ig_last_checked_at else None),
                 "published_at": published_at.isoformat() if published_at else None,
                 "created_at": created_at.isoformat() if created_at else None,
                 "source_urls": sources_by_post.get(row["id"], []),
@@ -1094,21 +1112,116 @@ def list_posts(limit: int = 50) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Rate-limit tracking (rolling 24 h window)
+# ---------------------------------------------------------------------------
+
+INSTAGRAM_DAILY_PUBLISH_LIMIT = 25
+
+
+def count_recent_publishes(hours: int = 24) -> dict:
+    """Count all API publish attempts in the last *hours* to track Instagram's
+    ~25 posts/day rolling rate limit.  Meta counts every container-create call,
+    even if it failed (error 2207032, timeouts, etc.), so we include
+    publish_error posts that have at least one attempt."""
+    ensure_schema()
+    now_utc = datetime.now(UTC)
+    cutoff = now_utc - timedelta(hours=hours)
+    # Naive cutoff for columns stored without tz info
+    cutoff_naive = cutoff.replace(tzinfo=None)
+
+    def _to_utc(dt: datetime) -> datetime:
+        """Ensure a datetime is timezone-aware (UTC)."""
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=UTC)
+        return dt
+
+    with get_engine().begin() as conn:
+        # 1) Posts that were actually published (have published_at)
+        published_rows = (
+            conn.execute(
+                select(posts_table.c.published_at)
+                .where(
+                    posts_table.c.published_at >= cutoff,
+                    posts_table.c.status.in_(
+                        {
+                            POST_STATUS_PUBLISHED,
+                            POST_STATUS_PUBLISHED_ACTIVE,
+                            POST_STATUS_PUBLISHED_DELETED,
+                        }
+                    ),
+                )
+                .order_by(posts_table.c.published_at.asc())
+            )
+            .mappings()
+            .all()
+        )
+
+        # 2) Failed attempts that Meta still counted against the limit
+        error_rows = (
+            conn.execute(
+                select(posts_table.c.last_publish_attempt_at)
+                .where(
+                    posts_table.c.last_publish_attempt_at >= cutoff_naive,
+                    posts_table.c.status == POST_STATUS_PUBLISH_ERROR,
+                    posts_table.c.publish_attempts > 0,
+                )
+                .order_by(posts_table.c.last_publish_attempt_at.asc())
+            )
+            .mappings()
+            .all()
+        )
+
+    # Merge all timestamps (normalized to UTC) to find the oldest
+    all_timestamps: list[datetime] = []
+    for r in published_rows:
+        if r["published_at"] is not None:
+            all_timestamps.append(_to_utc(r["published_at"]))
+    for r in error_rows:
+        if r["last_publish_attempt_at"] is not None:
+            all_timestamps.append(_to_utc(r["last_publish_attempt_at"]))
+    all_timestamps.sort()
+
+    count = len(all_timestamps)
+    oldest_published_at = None
+    next_slot_in_minutes = None
+
+    if all_timestamps:
+        oldest = all_timestamps[0]
+        oldest_published_at = oldest.isoformat()
+        slot_free_at = oldest + timedelta(hours=hours)
+        remaining = (slot_free_at - now_utc).total_seconds()
+        next_slot_in_minutes = max(0, round(remaining / 60))
+
+    return {
+        "count": count,
+        "limit": INSTAGRAM_DAILY_PUBLISH_LIMIT,
+        "hours": hours,
+        "oldest_published_at": oldest_published_at,
+        "next_slot_in_minutes": next_slot_in_minutes,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Scheduler config CRUD
 # ---------------------------------------------------------------------------
+
 
 def get_scheduler_config() -> dict:
     ensure_schema()
     with get_engine().begin() as conn:
-        row = conn.execute(
-            select(
-                scheduler_config_table.c.enabled,
-                scheduler_config_table.c.schedule,
-                scheduler_config_table.c.updated_at,
+        row = (
+            conn.execute(
+                select(
+                    scheduler_config_table.c.enabled,
+                    scheduler_config_table.c.schedule,
+                    scheduler_config_table.c.updated_at,
+                )
+                .order_by(scheduler_config_table.c.id.asc())
+                .limit(1)
             )
-            .order_by(scheduler_config_table.c.id.asc())
-            .limit(1)
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
     if not row:
         return {"enabled": False, "schedule": dict(DEFAULT_SCHEDULE)}
     schedule = row["schedule"]
@@ -1124,11 +1237,11 @@ def save_scheduler_config(enabled: bool, schedule: dict) -> None:
     ensure_schema()
     now = _utc_now()
     with get_engine().begin() as conn:
-        existing = conn.execute(
-            select(scheduler_config_table.c.id)
-            .order_by(scheduler_config_table.c.id.asc())
-            .limit(1)
-        ).mappings().first()
+        existing = (
+            conn.execute(select(scheduler_config_table.c.id).order_by(scheduler_config_table.c.id.asc()).limit(1))
+            .mappings()
+            .first()
+        )
         if existing:
             conn.execute(
                 update(scheduler_config_table)
@@ -1137,15 +1250,14 @@ def save_scheduler_config(enabled: bool, schedule: dict) -> None:
             )
         else:
             conn.execute(
-                scheduler_config_table.insert().values(
-                    enabled=int(enabled), schedule=schedule, updated_at=now
-                )
+                scheduler_config_table.insert().values(enabled=int(enabled), schedule=schedule, updated_at=now)
             )
 
 
 # ---------------------------------------------------------------------------
 # Content queue CRUD
 # ---------------------------------------------------------------------------
+
 
 def _queue_row_to_dict(row) -> dict:
     d = dict(row)
@@ -1158,30 +1270,36 @@ def _queue_row_to_dict(row) -> dict:
 
 def get_queue_items(days_back: int = 3, days_forward: int = 14) -> list[dict]:
     ensure_schema()
-    from config.settings import TIMEZONE
     from zoneinfo import ZoneInfo
+
+    from config.settings import TIMEZONE
+
     tz = ZoneInfo(TIMEZONE)
     now = datetime.now(tz)
     start = (now - timedelta(days=days_back)).strftime("%Y-%m-%d")
     end = (now + timedelta(days=days_forward)).strftime("%Y-%m-%d")
     with get_engine().begin() as conn:
-        rows = conn.execute(
-            select(content_queue_table)
-            .where(content_queue_table.c.scheduled_date >= start)
-            .where(content_queue_table.c.scheduled_date <= end)
-            .order_by(content_queue_table.c.scheduled_date.asc())
-        ).mappings().all()
+        rows = (
+            conn.execute(
+                select(content_queue_table)
+                .where(content_queue_table.c.scheduled_date >= start)
+                .where(content_queue_table.c.scheduled_date <= end)
+                .order_by(content_queue_table.c.scheduled_date.asc())
+            )
+            .mappings()
+            .all()
+        )
     return [_queue_row_to_dict(r) for r in rows]
 
 
 def get_queue_item_for_date(date_str: str) -> dict | None:
     ensure_schema()
     with get_engine().begin() as conn:
-        row = conn.execute(
-            select(content_queue_table)
-            .where(content_queue_table.c.scheduled_date == date_str)
-            .limit(1)
-        ).mappings().first()
+        row = (
+            conn.execute(select(content_queue_table).where(content_queue_table.c.scheduled_date == date_str).limit(1))
+            .mappings()
+            .first()
+        )
     return _queue_row_to_dict(row) if row else None
 
 
@@ -1208,17 +1326,14 @@ def add_queue_item(
 def remove_queue_item(item_id: int) -> bool:
     ensure_schema()
     with get_engine().begin() as conn:
-        row = conn.execute(
-            select(content_queue_table.c.status)
-            .where(content_queue_table.c.id == int(item_id))
-            .limit(1)
-        ).mappings().first()
+        row = (
+            conn.execute(select(content_queue_table.c.status).where(content_queue_table.c.id == int(item_id)).limit(1))
+            .mappings()
+            .first()
+        )
         if not row or row["status"] != "pending":
             return False
-        conn.execute(
-            delete(content_queue_table)
-            .where(content_queue_table.c.id == int(item_id))
-        )
+        conn.execute(delete(content_queue_table).where(content_queue_table.c.id == int(item_id)))
     return True
 
 
@@ -1227,8 +1342,10 @@ def auto_fill_queue(days: int = 7) -> dict:
     config = get_scheduler_config()
     schedule = config.get("schedule", DEFAULT_SCHEDULE)
 
-    from config.settings import TIMEZONE
     from zoneinfo import ZoneInfo
+
+    from config.settings import TIMEZONE
+
     tz = ZoneInfo(TIMEZONE)
     today = datetime.now(tz).date()
 
@@ -1308,12 +1425,16 @@ def get_last_used_template_name() -> str | None:
     """Return the template name from the most recent post's content_payload."""
     ensure_schema()
     with get_engine().begin() as conn:
-        row = conn.execute(
-            select(posts_table.c.content_payload)
-            .where(posts_table.c.content_payload.is_not(None))
-            .order_by(posts_table.c.created_at.desc(), posts_table.c.id.desc())
-            .limit(1)
-        ).mappings().first()
+        row = (
+            conn.execute(
+                select(posts_table.c.content_payload)
+                .where(posts_table.c.content_payload.is_not(None))
+                .order_by(posts_table.c.created_at.desc(), posts_table.c.id.desc())
+                .limit(1)
+            )
+            .mappings()
+            .first()
+        )
     if not row:
         return None
     payload = row["content_payload"]

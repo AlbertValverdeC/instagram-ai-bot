@@ -11,7 +11,7 @@ POST /api/scheduler/queue/auto-fill — auto-fill queue for N days
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
@@ -29,6 +29,7 @@ def _compute_next_run(config: dict, queue: list[dict]) -> dict | None:
         return None
 
     from zoneinfo import ZoneInfo
+
     from config.settings import TIMEZONE
     from modules.post_store import DAY_NAMES
 
@@ -55,9 +56,7 @@ def _compute_next_run(config: dict, queue: list[dict]) -> dict | None:
         if not match:
             continue
 
-        sched_dt = datetime(d.year, d.month, d.day,
-                            int(time_str[:2]), int(time_str[3:]),
-                            tzinfo=tz)
+        sched_dt = datetime(d.year, d.month, d.day, int(time_str[:2]), int(time_str[3:]), tzinfo=tz)
         if sched_dt < now:
             # Only skip if the date is in the past (not today — today might still fire)
             if d < now.date():
@@ -84,20 +83,22 @@ def get_scheduler():
         return auth_error
 
     from config.settings import TIMEZONE
-    from modules.post_store import get_scheduler_config, get_queue_items
     from dashboard.services.pipeline_runner import is_running
+    from modules.post_store import get_queue_items, get_scheduler_config
 
     config = get_scheduler_config()
     queue = get_queue_items(days_back=3, days_forward=14)
     next_run = _compute_next_run(config, queue)
 
-    return jsonify({
-        "config": config,
-        "queue": queue,
-        "next_run": next_run,
-        "pipeline_running": is_running(),
-        "timezone": TIMEZONE,
-    })
+    return jsonify(
+        {
+            "config": config,
+            "queue": queue,
+            "next_run": next_run,
+            "pipeline_running": is_running(),
+            "timezone": TIMEZONE,
+        }
+    )
 
 
 @bp.post("/api/scheduler/config")
@@ -106,7 +107,7 @@ def save_config():
     if auth_error:
         return auth_error
 
-    from modules.post_store import save_scheduler_config, DAY_NAMES
+    from modules.post_store import DAY_NAMES, save_scheduler_config
 
     data = request.get_json(silent=True) or {}
     enabled = bool(data.get("enabled", False))
@@ -126,6 +127,7 @@ def save_config():
     # Merge with current config if schedule not provided
     if not schedule:
         from modules.post_store import get_scheduler_config
+
         current = get_scheduler_config()
         schedule = current["schedule"]
 
@@ -140,8 +142,9 @@ def add_queue():
         return auth_error
 
     from zoneinfo import ZoneInfo
+
     from config.settings import TIMEZONE
-    from modules.post_store import add_queue_item, get_scheduler_config, DAY_NAMES
+    from modules.post_store import DAY_NAMES, add_queue_item, get_scheduler_config
 
     data = request.get_json(silent=True) or {}
     scheduled_date = str(data.get("scheduled_date", "")).strip()

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect } from "react";
 
 interface LightboxProps {
   open: boolean;
@@ -10,29 +10,37 @@ interface LightboxProps {
   onNext: () => void;
 }
 
-export function Lightbox({ open, slides, index, cacheBust, onClose, onPrev, onNext }: LightboxProps) {
+export function Lightbox({
+  open,
+  slides,
+  index,
+  cacheBust,
+  onClose,
+  onPrev,
+  onNext,
+}: LightboxProps) {
   useEffect(() => {
     if (!open) {
       return;
     }
 
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowLeft') {
+      if (event.key === "ArrowLeft") {
         event.preventDefault();
         onPrev();
       }
-      if (event.key === 'ArrowRight') {
+      if (event.key === "ArrowRight") {
         event.preventDefault();
         onNext();
       }
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         event.preventDefault();
         onClose();
       }
     };
 
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose, onNext, onPrev]);
 
   if (!open || slides.length === 0) {
@@ -42,7 +50,10 @@ export function Lightbox({ open, slides, index, cacheBust, onClose, onPrev, onNe
   const src = `/slides/${slides[index]}?t=${cacheBust}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85"
+      onClick={onClose}
+    >
       <button
         type="button"
         onClick={(e) => {

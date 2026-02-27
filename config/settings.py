@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # Load .env from project root
@@ -47,7 +48,10 @@ OPENAI_MODEL = "gpt-4o-mini"
 OPENAI_MAX_TOKENS = 2000
 DIRECTOR_MODEL = os.getenv("DIRECTOR_MODEL", "gpt-4o")
 CONTENT_USE_DIRECTOR = os.getenv("CONTENT_USE_DIRECTOR", "false").strip().lower() in {
-    "1", "true", "yes", "on",
+    "1",
+    "true",
+    "yes",
+    "on",
 }
 
 # --- Image Provider ---
@@ -82,9 +86,26 @@ RSS_FEEDS = [
     "https://www.technologyreview.com/feed/",
 ]
 TRENDS_KEYWORDS = [
-    "AI", "GPT", "robot", "tech", "app", "Google", "Apple", "Meta",
-    "Microsoft", "Samsung", "Tesla", "chip", "quantum", "cyber",
-    "cloud", "data", "neural", "OpenAI", "startup", "software",
+    "AI",
+    "GPT",
+    "robot",
+    "tech",
+    "app",
+    "Google",
+    "Apple",
+    "Meta",
+    "Microsoft",
+    "Samsung",
+    "Tesla",
+    "chip",
+    "quantum",
+    "cyber",
+    "cloud",
+    "data",
+    "neural",
+    "OpenAI",
+    "startup",
+    "software",
 ]
 
 # --- Carousel ---

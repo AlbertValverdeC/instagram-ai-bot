@@ -1,12 +1,10 @@
-import type { PostRecord } from '../../types';
+import type { PostRecord } from "../../types";
 
 interface PostsHistoryProps {
   posts: PostRecord[];
   loading: boolean;
   dbStatusText: string;
-  dbStatusColor: 'green' | 'orange' | 'red' | 'dim';
-  syncMessage: string;
-  syncColor: 'green' | 'orange' | 'red' | 'dim';
+  dbStatusColor: "green" | "orange" | "red" | "dim";
   syncing: boolean;
   onSync: () => void;
   onPublish: (postId: number) => void;
@@ -15,7 +13,7 @@ interface PostsHistoryProps {
 }
 
 function fmtDate(iso?: string | null): string {
-  if (!iso) return '-';
+  if (!iso) return "-";
   try {
     return new Date(iso).toLocaleString();
   } catch {
@@ -24,7 +22,7 @@ function fmtDate(iso?: string | null): string {
 }
 
 function fmtNum(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '-';
+  if (value === null || value === undefined || value === "") return "-";
   const n = Number(value);
   if (Number.isNaN(n)) return String(value);
   return n.toLocaleString();
@@ -32,37 +30,38 @@ function fmtNum(value: unknown): string {
 
 function statusLabel(status?: string): string {
   const labels: Record<string, string> = {
-    draft: 'draft',
-    generated: 'pendiente',
-    publish_error: 'error',
-    published_active: 'activo',
-    published_deleted: 'borrado',
-    published: 'publicado',
+    draft: "draft",
+    generated: "pendiente",
+    publish_error: "error",
+    published_active: "activo",
+    published_deleted: "borrado",
+    published: "publicado",
   };
-  return labels[status || ''] || status || '-';
+  return labels[status || ""] || status || "-";
 }
 
 function statusClass(status?: string): string {
-  if (status === 'draft') return 'bg-sky-400/10 text-sky-300 border-sky-400/20';
-  if (status === 'published_active' || status === 'published') return 'bg-emerald-400/10 text-emerald-400 border-emerald-400/20';
-  if (status === 'published_deleted') return 'bg-orange/10 text-orange border-orange/20';
-  if (status === 'publish_error') return 'bg-red/10 text-red border-red/20';
-  return 'bg-text-subtle/10 text-text-subtle border-text-subtle/20';
+  if (status === "draft") return "bg-sky-400/10 text-sky-300 border-sky-400/20";
+  if (status === "published_active" || status === "published")
+    return "bg-emerald-400/10 text-emerald-400 border-emerald-400/20";
+  if (status === "published_deleted") return "bg-orange/10 text-orange border-orange/20";
+  if (status === "publish_error") return "bg-red/10 text-red border-red/20";
+  return "bg-text-subtle/10 text-text-subtle border-text-subtle/20";
 }
 
 function canRetry(status?: string): boolean {
-  return status === 'generated' || status === 'publish_error';
+  return status === "generated" || status === "publish_error";
 }
 
 function canPublish(status?: string): boolean {
-  return status === 'draft';
+  return status === "draft";
 }
 
-function textColor(color: 'green' | 'orange' | 'red' | 'dim'): string {
-  if (color === 'green') return 'text-emerald-400';
-  if (color === 'orange') return 'text-orange';
-  if (color === 'red') return 'text-red';
-  return 'text-text-subtle';
+function textColor(color: "green" | "orange" | "red" | "dim"): string {
+  if (color === "green") return "text-emerald-400";
+  if (color === "orange") return "text-orange";
+  if (color === "red") return "text-red";
+  return "text-text-subtle";
 }
 
 export function PostsHistory({
@@ -70,8 +69,6 @@ export function PostsHistory({
   loading,
   dbStatusText,
   dbStatusColor,
-  syncMessage,
-  syncColor,
   syncing,
   onSync,
   onPublish,
@@ -105,7 +102,6 @@ export function PostsHistory({
       {/* Status messages */}
       <div className="space-y-1 border-b border-border-dark px-6 py-3">
         <p className={`text-xs ${textColor(dbStatusColor)}`}>{dbStatusText}</p>
-        {syncMessage && <p className={`text-xs ${textColor(syncColor)}`}>{syncMessage}</p>}
       </div>
 
       {/* Table */}
@@ -113,7 +109,9 @@ export function PostsHistory({
         {loading ? (
           <p className="py-8 text-center text-sm italic text-text-subtle">Cargando...</p>
         ) : posts.length === 0 ? (
-          <p className="py-8 text-center text-sm italic text-text-subtle">Sin publicaciones registradas aún.</p>
+          <p className="py-8 text-center text-sm italic text-text-subtle">
+            Sin publicaciones registradas aún.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1200px] border-collapse text-left text-xs">
@@ -139,25 +137,40 @@ export function PostsHistory({
                       {fmtDate((post.published_at as string) || (post.created_at as string))}
                     </td>
                     <td className="max-w-[200px] truncate border-b border-border-dark/50 px-3 py-3 text-white">
-                      {String(post.topic || '-')}
+                      {String(post.topic || "-")}
                     </td>
                     <td className="border-b border-border-dark/50 px-3 py-3">
-                      <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusClass(post.status as string)}`}>
+                      <span
+                        className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusClass(post.status as string)}`}
+                      >
                         {statusLabel(post.status as string)}
                       </span>
                     </td>
                     <td className="border-b border-border-dark/50 px-3 py-3 text-text-subtle">
-                      {String(post.ig_status || '-')}
+                      {String(post.ig_status || "-")}
                     </td>
-                    <td className="border-b border-border-dark/50 px-3 py-3 text-text-subtle">{post.virality_score ?? '-'}</td>
-                    <td className="border-b border-border-dark/50 px-3 py-3 text-text-subtle">{fmtNum(post.likes)}</td>
-                    <td className="border-b border-border-dark/50 px-3 py-3 text-text-subtle">{fmtNum(post.comments)}</td>
-                    <td className="border-b border-border-dark/50 px-3 py-3 text-text-subtle">{fmtNum(post.reach)}</td>
                     <td className="border-b border-border-dark/50 px-3 py-3 text-text-subtle">
-                      {post.engagement_rate == null ? '-' : `${Number(post.engagement_rate).toFixed(2)}%`}
+                      {post.virality_score ?? "-"}
                     </td>
-                    <td className="max-w-[150px] truncate border-b border-border-dark/50 px-3 py-3 text-text-subtle" title={String(post.last_error_message || '')}>
-                      {post.last_error_tag || '-'}
+                    <td className="border-b border-border-dark/50 px-3 py-3 text-text-subtle">
+                      {fmtNum(post.likes)}
+                    </td>
+                    <td className="border-b border-border-dark/50 px-3 py-3 text-text-subtle">
+                      {fmtNum(post.comments)}
+                    </td>
+                    <td className="border-b border-border-dark/50 px-3 py-3 text-text-subtle">
+                      {fmtNum(post.reach)}
+                    </td>
+                    <td className="border-b border-border-dark/50 px-3 py-3 text-text-subtle">
+                      {post.engagement_rate == null
+                        ? "-"
+                        : `${Number(post.engagement_rate).toFixed(2)}%`}
+                    </td>
+                    <td
+                      className="max-w-[150px] truncate border-b border-border-dark/50 px-3 py-3 text-text-subtle"
+                      title={String(post.last_error_message || "")}
+                    >
+                      {post.last_error_tag || "-"}
                     </td>
                     <td className="border-b border-border-dark/50 px-3 py-3">
                       <div className="flex items-center gap-2">

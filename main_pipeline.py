@@ -17,7 +17,6 @@ import argparse
 import json
 import logging
 import re
-import shutil
 import sys
 import time
 from datetime import datetime
@@ -27,16 +26,18 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import DATA_DIR, HISTORY_FILE, LOGS_DIR, OPENAI_API_KEY, OUTPUT_DIR
+from config.settings import DATA_DIR, LOGS_DIR, OPENAI_API_KEY, OUTPUT_DIR
 from config.templates import TEMPLATES
 from modules.post_store import (
     create_generated_post,
-    ensure_schema as ensure_post_store_schema,
     find_duplicate_candidate,
     get_db_runtime_info,
     mark_post_publish_attempt,
     mark_post_publish_error,
     mark_post_published,
+)
+from modules.post_store import (
+    ensure_schema as ensure_post_store_schema,
 )
 
 logger = logging.getLogger("pipeline")
@@ -56,10 +57,7 @@ def _classify_publish_error(exc: Exception) -> dict:
     code_label = f"{code}:{subcode}" if code and subcode else (code or subcode)
 
     tag = "publish_unknown"
-    summary = (
-        "No se pudo publicar en Instagram por un error no clasificado. "
-        "Revisa el detalle técnico y reintenta."
-    )
+    summary = "No se pudo publicar en Instagram por un error no clasificado. Revisa el detalle técnico y reintenta."
 
     # ── Known Meta error classification ──────────────────────────────
     #
@@ -92,10 +90,7 @@ def _classify_publish_error(exc: Exception) -> dict:
         )
     elif "returned invalid id=0" in low or "returned id=0" in low:
         tag = "meta_container_id_zero"
-        summary = (
-            "Meta devolvió id=0 al crear el contenedor del carrusel. "
-            "Error transitorio de la API — reintenta."
-        )
+        summary = "Meta devolvió id=0 al crear el contenedor del carrusel. Error transitorio de la API — reintenta."
     elif (
         "application request limit reached" in low
         or subcode in {"2207051", "2207085"}
@@ -115,8 +110,7 @@ def _classify_publish_error(exc: Exception) -> dict:
     elif "unauthorized" in low or code == "190":
         tag = "meta_auth"
         summary = (
-            "Meta rechazó el token/permisos. Revisa META_ACCESS_TOKEN y permisos "
-            "instagram_content_publish/pages_*."
+            "Meta rechazó el token/permisos. Revisa META_ACCESS_TOKEN y permisos instagram_content_publish/pages_*."
         )
     elif "fatal" in low and subcode == "2207085":
         tag = "meta_fatal_after_limit"
@@ -133,8 +127,7 @@ def _classify_publish_error(exc: Exception) -> dict:
     elif "2207001" in raw or "session" in low and "expired" in low:
         tag = "meta_session_expired"
         summary = (
-            "La sesión de upload de Meta expiró (2207001). "
-            "Reintenta — el contenedor tardó demasiado en procesarse."
+            "La sesión de upload de Meta expiró (2207001). Reintenta — el contenedor tardó demasiado en procesarse."
         )
 
     return {
@@ -157,8 +150,7 @@ def _validate_required_keys(test_mode: bool, step: str | None):
     needs_openai = step in (None, "research", "content")
     if needs_openai and not OPENAI_API_KEY:
         raise RuntimeError(
-            "OPENAI_API_KEY is missing. Create .env (or set the key in Dashboard > API Keys) "
-            "and run again."
+            "OPENAI_API_KEY is missing. Create .env (or set the key in Dashboard > API Keys) and run again."
         )
 
 
@@ -285,7 +277,7 @@ def daily_pipeline(
         focus_topic: optional user-defined topic to focus research on
     """
     logger.info("=" * 60)
-    logger.info(f"INSTAGRAM AI BOT — Pipeline Start")
+    logger.info("INSTAGRAM AI BOT — Pipeline Start")
     logger.info(f"  Mode: {'TEST' if test_mode else 'DRY-RUN' if dry_run else 'LIVE'}")
     logger.info(f"  Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     if step:
@@ -325,6 +317,7 @@ def daily_pipeline(
             logger.info(f"[TEST] Using sample topic: {topic['topic']}")
         else:
             from modules.researcher import find_trending_topic
+
             topic = find_trending_topic(focus_topic=focus_topic)
 
         logger.info(f"✓ Topic: {topic['topic']}")
@@ -355,10 +348,7 @@ def daily_pipeline(
             if dry_run or test_mode:
                 logger.warning(msg)
             else:
-                raise RuntimeError(
-                    msg
-                    + " Aborting LIVE run to avoid duplicate publication."
-                )
+                raise RuntimeError(msg + " Aborting LIVE run to avoid duplicate publication.")
 
         if step == "research":
             # Save topic for later use
@@ -387,6 +377,7 @@ def daily_pipeline(
             logger.info(f"[TEST] Using sample content: {len(content['slides'])} slides")
         else:
             from modules.content_generator import generate
+
             content = generate(topic)
 
         logger.info(f"✓ Generated {len(content['slides'])} slides")
@@ -406,7 +397,7 @@ def daily_pipeline(
         if content_file.exists():
             with open(content_file) as f:
                 content = json.load(f)
-            logger.info(f"Loaded content from file")
+            logger.info("Loaded content from file")
         else:
             content = get_sample_content()
             logger.warning("No content found, using sample data")
@@ -415,6 +406,7 @@ def daily_pipeline(
     if step is None or step == "design":
         logger.info("\n🎨 STEP 3: Design — Creating carousel images...")
         from modules.carousel_designer import create
+
         image_paths = create(content, template_index=template_idx, topic=topic)
         logger.info(f"✓ Created {len(image_paths)} slide images (template: {content.get('template_name', '?')})")
         for p in image_paths:
@@ -426,6 +418,7 @@ def daily_pipeline(
     # ── Step 4: Engagement Strategy ──────────────────────────────────────
     logger.info("\n📊 STEP 4: Engagement — Building strategy...")
     from modules.engagement import get_strategy
+
     strategy = get_strategy(topic, content)
     logger.info(f"✓ Day type: {strategy['day_type']}")
     logger.info(f"  Posting time: {strategy['posting_time']} ({strategy['timezone']})")
@@ -437,7 +430,7 @@ def daily_pipeline(
         logger.info("  To publish for real, run without --dry-run or --test")
 
         # Show what would be published
-        logger.info(f"\n--- PREVIEW ---")
+        logger.info("\n--- PREVIEW ---")
         logger.info(f"Images: {len(image_paths or [])} slides")
         logger.info(f"Caption preview:\n{strategy['full_caption'][:500]}")
     else:
@@ -478,8 +471,7 @@ def daily_pipeline(
                     break
                 except Exception as e:
                     logger.warning(
-                        "Could not update post store publication status "
-                        "(attempt %d/3, post_id=%s, media_id=%s): %s",
+                        "Could not update post store publication status (attempt %d/3, post_id=%s, media_id=%s): %s",
                         attempt,
                         post_id,
                         media_id,
@@ -510,8 +502,7 @@ def daily_pipeline(
                     error_message=f"{info['summary']} | {info['raw']}",
                 )
                 logger.error(
-                    "✗ Publish failed. Post marked as publish_error "
-                    "(id=%s, tag=%s, code=%s)",
+                    "✗ Publish failed. Post marked as publish_error (id=%s, tag=%s, code=%s)",
                     post_id,
                     info["tag"],
                     info["code"] or "-",
@@ -520,8 +511,7 @@ def daily_pipeline(
                 logger.warning(f"Could not persist publish error in DB: {db_e}")
 
             raise RuntimeError(
-                f"{info['summary']} [tag={info['tag']}, code={info['code'] or '-'}] "
-                f"Detalle técnico: {info['raw']}"
+                f"{info['summary']} [tag={info['tag']}, code={info['code'] or '-'}] Detalle técnico: {info['raw']}"
             ) from e
 
     # ── Cleanup ──────────────────────────────────────────────────────────

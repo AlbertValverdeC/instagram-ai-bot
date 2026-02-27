@@ -46,9 +46,42 @@ _MODEL_FALLBACKS = (
 
 
 _STOPWORDS = {
-    "de", "la", "el", "los", "las", "y", "en", "del", "un", "una", "por", "con", "para",
-    "que", "a", "al", "se", "es", "su", "sus", "como", "sobre", "tema", "noticia",
-    "the", "and", "of", "to", "in", "for", "on", "with", "at", "is", "are", "new",
+    "de",
+    "la",
+    "el",
+    "los",
+    "las",
+    "y",
+    "en",
+    "del",
+    "un",
+    "una",
+    "por",
+    "con",
+    "para",
+    "que",
+    "a",
+    "al",
+    "se",
+    "es",
+    "su",
+    "sus",
+    "como",
+    "sobre",
+    "tema",
+    "noticia",
+    "the",
+    "and",
+    "of",
+    "to",
+    "in",
+    "for",
+    "on",
+    "with",
+    "at",
+    "is",
+    "are",
+    "new",
 }
 
 
@@ -119,6 +152,7 @@ def _compose_content_prompt(topic: str, key_points: list[str]) -> str:
 # ---------------------------------------------------------------------------
 # Google GenAI provider (Imagen + Gemini)
 # ---------------------------------------------------------------------------
+
 
 def _get_client():
     """Lazy-initialize the Google GenAI client."""
@@ -275,6 +309,7 @@ def _generate_with_model_fallbacks(client, prompt: str, aspect_ratio: str):
 # xAI Grok provider
 # ---------------------------------------------------------------------------
 
+
 def _get_xai_client():
     """Lazy-initialize the xAI client (OpenAI-compatible)."""
     global _xai_client
@@ -331,6 +366,7 @@ def _generate_with_xai(prompt: str):
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def generate_cover_background(prompt: str, topic_hint: str | None = None, aspect_ratio: str = "3:4"):
     """

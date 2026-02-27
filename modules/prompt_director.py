@@ -348,9 +348,9 @@ class PromptDirector:
         try:
             topic_en = topic.get("topic_en", topic.get("topic", "technology"))
             bg = template.get("background", {})
-            accent = template.get("accent_color", (0, 200, 255))
-            color_top = bg.get("color_top", (10, 15, 40))
-            color_bottom = bg.get("color_bottom", (25, 55, 109))
+            template.get("accent_color", (0, 200, 255))
+            bg.get("color_top", (10, 15, 40))
+            bg.get("color_bottom", (25, 55, 109))
 
             # Pick meta-prompt based on provider: xAI allows celebrities & logos
             if IMAGE_PROVIDER == "xai":

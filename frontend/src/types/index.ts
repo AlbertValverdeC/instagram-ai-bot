@@ -1,4 +1,4 @@
-export type PipelineStatus = 'idle' | 'running' | 'done' | 'error';
+export type PipelineStatus = "idle" | "running" | "done" | "error";
 
 export interface TextProposal {
   id: string;
@@ -84,7 +84,7 @@ export interface PromptItem {
   name: string;
   description: string;
   category: string;
-  type: 'meta' | 'fallback' | string;
+  type: "meta" | "fallback" | string;
   module: string;
   variables: string[];
   what_it_does?: string;
@@ -138,8 +138,17 @@ export interface PostRecord {
   [key: string]: unknown;
 }
 
+export interface RateLimitInfo {
+  count: number;
+  limit: number;
+  hours: number;
+  oldest_published_at: string | null;
+  next_slot_in_minutes: number | null;
+}
+
 export interface PostsResponse {
   posts: PostRecord[];
+  rate_limit?: RateLimitInfo;
 }
 
 export interface PostDetailResponse {

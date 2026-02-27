@@ -10,14 +10,14 @@ bp = Blueprint("prompts_routes", __name__)
 
 def _get_prompt_defaults() -> dict:
     """Lazy-import all default prompts from modules."""
+    from modules.content_generator import _DEFAULT_CONTENT_FALLBACK
+    from modules.image_generator import _DEFAULT_IMAGE_FALLBACK
     from modules.prompt_director import (
         _DEFAULT_CONTENT_META,
         _DEFAULT_IMAGE_META,
         _DEFAULT_RESEARCH_META,
     )
     from modules.researcher import _DEFAULT_RESEARCH_FALLBACK
-    from modules.content_generator import _DEFAULT_CONTENT_FALLBACK
-    from modules.image_generator import _DEFAULT_IMAGE_FALLBACK
 
     return {
         "research_meta": _DEFAULT_RESEARCH_META,

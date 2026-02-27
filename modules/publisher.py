@@ -14,7 +14,7 @@ import json
 import logging
 import random
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -43,6 +43,7 @@ GRAPH_API_BASE = f"https://graph.facebook.com/{_normalize_graph_version(GRAPH_AP
 
 
 # ── Image Hosting (Imgur) ────────────────────────────────────────────────────
+
 
 def _upload_to_imgur(image_path: Path) -> str:
     """Upload an image to Imgur and return the public URL."""
@@ -109,7 +110,7 @@ def _check_public_image_url(image_url: str) -> tuple[bool, str]:
             last_error = str(exc)
             continue
 
-        content_type = (resp.headers.get("Content-Type", "").split(";")[0].strip().lower())
+        content_type = resp.headers.get("Content-Type", "").split(";")[0].strip().lower()
         ok_status = 200 <= resp.status_code < 300
         is_image = content_type.startswith("image/")
         resp.close()
@@ -172,10 +173,7 @@ def upload_images(image_paths: list[Path]) -> list[str]:
 
     # Option B: upload to Imgur as fallback.
     if not IMGUR_CLIENT_ID:
-        raise ValueError(
-            "No image hosting configured. Set PUBLIC_IMAGE_BASE_URL (recommended) "
-            "or IMGUR_CLIENT_ID."
-        )
+        raise ValueError("No image hosting configured. Set PUBLIC_IMAGE_BASE_URL (recommended) or IMGUR_CLIENT_ID.")
 
     for path in image_paths:
         url = _upload_to_imgur(path)
@@ -187,6 +185,7 @@ def upload_images(image_paths: list[Path]) -> list[str]:
 
 
 # ── Instagram Graph API ─────────────────────────────────────────────────────
+
 
 def _meta_error_text(resp: requests.Response) -> str:
     """Extract a human-readable Meta Graph API error."""
@@ -260,9 +259,7 @@ def _extract_meta_id(payload: dict, *, context: str) -> str:
     Meta IDs should be non-empty numeric strings. "0" is invalid for publish flow.
     """
     if not isinstance(payload, dict):
-        raise RuntimeError(
-            f"Meta {context} returned unexpected payload type: {type(payload).__name__}"
-        )
+        raise RuntimeError(f"Meta {context} returned unexpected payload type: {type(payload).__name__}")
 
     if isinstance(payload.get("error"), dict):
         err = payload["error"]
@@ -273,13 +270,9 @@ def _extract_meta_id(payload: dict, *, context: str) -> str:
     raw_id = payload.get("id")
     sid = str(raw_id or "").strip()
     if not sid:
-        raise RuntimeError(
-            f"Meta {context} missing id in payload: {_truncate_json(payload)}"
-        )
+        raise RuntimeError(f"Meta {context} missing id in payload: {_truncate_json(payload)}")
     if sid == "0" or not sid.isdigit():
-        raise RuntimeError(
-            f"Meta {context} returned invalid id={sid}. Payload: {_truncate_json(payload)}"
-        )
+        raise RuntimeError(f"Meta {context} returned invalid id={sid}. Payload: {_truncate_json(payload)}")
     return sid
 
 
@@ -359,9 +352,7 @@ def _graph_post(
                 payload = resp.json()
             except ValueError:
                 body = (resp.text or "").strip()
-                raise RuntimeError(
-                    f"Meta POST {path} returned non-JSON response: {body[:300]}"
-                ) from None
+                raise RuntimeError(f"Meta POST {path} returned non-JSON response: {body[:300]}") from None
 
             if isinstance(payload, dict) and isinstance(payload.get("error"), dict):
                 # Sometimes APIs return HTTP 200 with an error envelope.
@@ -488,13 +479,13 @@ def _create_carousel_container(item_ids: list[str], caption: str) -> str:
         raw_id = str(payload.get("id", "")).strip()
         if raw_id == "0" and attempt < max_attempts:
             logger.warning(
-                "Meta carousel_container_create returned id=0 (attempt %d/%d). "
-                "Retrying in %ds...",
+                "Meta carousel_container_create returned id=0 (attempt %d/%d). Retrying in %ds...",
                 attempt,
                 max_attempts,
                 10 * attempt,
             )
             import time
+
             time.sleep(10 * attempt)
             continue
         container_id = _extract_meta_id(payload, context="carousel_container_create")
@@ -532,13 +523,10 @@ def _wait_container_ready(
         if status in {"ERROR", "EXPIRED"}:
             status_text = status_payload.get("status", "")
             # Check if this is a known transient error
-            is_transient = any(
-                code in str(status_text) for code in _TRANSIENT_ERROR_CODES
-            )
+            is_transient = any(code in str(status_text) for code in _TRANSIENT_ERROR_CODES)
             raise RuntimeError(
                 f"{kind} container {container_id} failed with status={status}. "
-                f"Payload={_truncate_json(status_payload)}"
-                + (" [transient]" if is_transient else "")
+                f"Payload={_truncate_json(status_payload)}" + (" [transient]" if is_transient else "")
             )
         if attempt >= max_attempts:
             raise RuntimeError(
@@ -558,7 +546,7 @@ def _wait_container_ready(
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _parse_graph_datetime(value: str | None) -> datetime | None:
@@ -678,7 +666,10 @@ def _publish_container(container_id: str, *, expected_caption: str | None = None
 
             logger.warning(
                 "media_publish attempt %d/%d failed: %s (ambiguous=%s)",
-                attempt, max_attempts, err_text, is_ambiguous,
+                attempt,
+                max_attempts,
+                err_text,
+                is_ambiguous,
             )
 
             # ── If this looks like a rate-limit / phantom-fail, check IG ──
@@ -694,7 +685,8 @@ def _publish_container(container_id: str, *, expected_caption: str | None = None
                     )
                 except Exception as recover_exc:
                     logger.warning(
-                        "Reconciliation lookup failed: %s", recover_exc,
+                        "Reconciliation lookup failed: %s",
+                        recover_exc,
                     )
                     recovered = None
 
@@ -720,10 +712,7 @@ def _publish_container(container_id: str, *, expected_caption: str | None = None
             elif not is_ambiguous:
                 break
 
-    raise RuntimeError(
-        f"media_publish failed after {max_attempts} attempts "
-        f"(container={container_id}): {last_exc}"
-    )
+    raise RuntimeError(f"media_publish failed after {max_attempts} attempts (container={container_id}): {last_exc}")
 
 
 def publish(image_paths: list[Path], content: dict, strategy: dict) -> str:
@@ -740,8 +729,7 @@ def publish(image_paths: list[Path], content: dict, strategy: dict) -> str:
     """
     if not META_ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
         raise ValueError(
-            "META_ACCESS_TOKEN and INSTAGRAM_ACCOUNT_ID must be set. "
-            "See .env.example for setup instructions."
+            "META_ACCESS_TOKEN and INSTAGRAM_ACCOUNT_ID must be set. See .env.example for setup instructions."
         )
     if not image_paths:
         raise ValueError("No images to publish. image_paths is empty.")
@@ -789,8 +777,7 @@ def publish(image_paths: list[Path], content: dict, strategy: dict) -> str:
             if "[transient]" in str(e) and full_attempt < full_retries:
                 wait = 30 * full_attempt
                 logger.warning(
-                    "Transient error (attempt %d/%d): %s. "
-                    "Re-creating items + container in %ds...",
+                    "Transient error (attempt %d/%d): %s. Re-creating items + container in %ds...",
                     full_attempt,
                     full_retries,
                     str(e)[:200],
@@ -805,6 +792,7 @@ def publish(image_paths: list[Path], content: dict, strategy: dict) -> str:
 
 # ── History Management ───────────────────────────────────────────────────────
 
+
 def save_to_history(media_id: str, topic: dict):
     """Save the published post to history.json."""
     history = []
@@ -813,6 +801,7 @@ def save_to_history(media_id: str, topic: dict):
             history = json.load(f)
 
     from datetime import datetime
+
     entry = {
         "media_id": media_id,
         "topic": topic.get("topic", ""),
@@ -842,4 +831,4 @@ if __name__ == "__main__":
     print("  3. PUBLIC_IMAGE_BASE_URL (recommended) OR IMGUR_CLIENT_ID")
     print("\nSet these in .env and run with real images to test.")
     print("\nTo test image upload only:")
-    print("  python -c \"from modules.publisher import upload_images; ...\"")
+    print('  python -c "from modules.publisher import upload_images; ..."')

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from flask import Flask, abort, send_from_directory
 
 from dashboard.config import (
@@ -9,8 +7,10 @@ from dashboard.config import (
     FRONTEND_DIST_DIR,
     FRONTEND_INDEX_FILE,
     OUTPUT_DIR,
-    PROJECT_ROOT,
     ensure_dirs,
+)
+from dashboard.config import (
+    PROJECT_ROOT as PROJECT_ROOT,
 )
 from dashboard.routes import register_blueprints
 from dashboard.services.scheduler import start_scheduler_daemon

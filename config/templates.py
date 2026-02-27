@@ -78,7 +78,7 @@ TEMPLATES = [
 
 # Font sizes (will be scaled relative to slide dimensions)
 FONT_SIZES = {
-    "cover_title": 88,           # large bold for viral "thumbnail" impact
+    "cover_title": 88,  # large bold for viral "thumbnail" impact
     "cover_subtitle": 36,
     "slide_title": 48,
     "slide_body": 34,
@@ -86,20 +86,20 @@ FONT_SIZES = {
     "cta_title": 56,
     "cta_body": 36,
     "watermark": 24,
-    "swipe_indicator": 26,       # swipe CTA at bottom of cover
+    "swipe_indicator": 26,  # swipe CTA at bottom of cover
 }
 
 # Layout positions (as fractions of slide dimensions)
 LAYOUT = {
-    "padding_x": 80,           # horizontal padding in pixels
-    "padding_top": 160,        # top padding
-    "padding_bottom": 120,     # bottom padding
-    "title_y": 0.15,           # title Y position as fraction of height
-    "body_y": 0.35,            # body text start Y
-    "slide_number_y": 0.08,    # slide number Y
-    "watermark_y": 0.94,       # watermark Y
-    "accent_line_y": 0.28,     # decorative accent line Y
+    "padding_x": 80,  # horizontal padding in pixels
+    "padding_top": 160,  # top padding
+    "padding_bottom": 120,  # bottom padding
+    "title_y": 0.15,  # title Y position as fraction of height
+    "body_y": 0.35,  # body text start Y
+    "slide_number_y": 0.08,  # slide number Y
+    "watermark_y": 0.94,  # watermark Y
+    "accent_line_y": 0.28,  # decorative accent line Y
     "accent_line_width": 120,  # accent line width in pixels
-    "accent_line_height": 4,   # accent line height in pixels
-    "line_spacing": 1.62,      # line spacing multiplier (improved readability)
+    "accent_line_height": 4,  # accent line height in pixels
+    "line_spacing": 1.62,  # line spacing multiplier (improved readability)
 }

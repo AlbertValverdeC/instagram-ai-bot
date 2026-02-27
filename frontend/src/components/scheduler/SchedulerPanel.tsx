@@ -1,39 +1,41 @@
-import { useState } from 'react';
+import { useState } from "react";
 
-import { useScheduler } from '../../hooks/useScheduler';
-import { ScheduleConfigModal } from './ScheduleConfigModal';
-import type { QueueItem } from '../../types/scheduler';
+import { useScheduler } from "../../hooks/useScheduler";
+import { ScheduleConfigModal } from "./ScheduleConfigModal";
+import type { QueueItem } from "../../types/scheduler";
 
 const DAY_LABELS_SHORT: Record<string, string> = {
-  monday: 'Lun',
-  tuesday: 'Mar',
-  wednesday: 'Mié',
-  thursday: 'Jue',
-  friday: 'Vie',
-  saturday: 'Sáb',
-  sunday: 'Dom',
+  monday: "Lun",
+  tuesday: "Mar",
+  wednesday: "Mié",
+  thursday: "Jue",
+  friday: "Vie",
+  saturday: "Sáb",
+  sunday: "Dom",
 };
 
-const DAY_NAMES = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
-function formatNextRun(next: { day_name: string; date: string; time: string; hours_until: number } | null): string {
-  if (!next) return 'Sin publicaciones pendientes';
+function formatNextRun(
+  next: { day_name: string; date: string; time: string; hours_until: number } | null,
+): string {
+  if (!next) return "Sin publicaciones pendientes";
   const dayLabel = DAY_LABELS_SHORT[next.day_name] || next.day_name;
   const d = next.date.slice(5); // MM-DD
   const h = next.hours_until;
-  const hStr = h < 1 ? '<1h' : h < 24 ? `${Math.round(h)}h` : `${Math.round(h / 24)}d`;
+  const hStr = h < 1 ? "<1h" : h < 24 ? `${Math.round(h)}h` : `${Math.round(h / 24)}d`;
   return `${dayLabel} ${d} ${next.time} (en ${hStr})`;
 }
 
 function statusBadge(status: string) {
   switch (status) {
-    case 'completed':
+    case "completed":
       return <span className="text-[10px] font-bold text-green">completado</span>;
-    case 'processing':
+    case "processing":
       return <span className="text-[10px] font-bold text-accent animate-pulse">publicando...</span>;
-    case 'error':
+    case "error":
       return <span className="text-[10px] font-bold text-red">error</span>;
-    case 'pending':
+    case "pending":
       return <span className="text-[10px] font-bold text-orange">pendiente</span>;
     default:
       return <span className="text-[10px] font-bold text-dim">{status}</span>;
@@ -41,11 +43,11 @@ function statusBadge(status: string) {
 }
 
 function cardBorderColor(status: string, isToday: boolean): string {
-  if (status === 'completed') return 'border-green/60';
-  if (status === 'error') return 'border-red/60';
-  if (status === 'processing') return 'border-accent/60';
-  if (isToday) return 'border-primary';
-  return 'border-border-dark';
+  if (status === "completed") return "border-green/60";
+  if (status === "error") return "border-red/60";
+  if (status === "processing") return "border-accent/60";
+  if (isToday) return "border-primary";
+  return "border-border-dark";
 }
 
 interface AddPopoverProps {
@@ -54,10 +56,13 @@ interface AddPopoverProps {
 }
 
 function AddPopover({ onAdd, onClose }: AddPopoverProps) {
-  const [topic, setTopic] = useState('');
+  const [topic, setTopic] = useState("");
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
       <div
         className="w-80 rounded-xl border border-border bg-card p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -99,18 +104,17 @@ interface CardPopoverProps {
 
 function CardPopover({ item, onRemove, onClose }: CardPopoverProps) {
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
       <div
         className="w-72 rounded-xl border border-border bg-card p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <p className="mb-1 text-sm font-semibold">{item.scheduled_date}</p>
-        <p className="mb-1 text-xs text-dim">
-          Tema: {item.topic || 'AI auto-trending'}
-        </p>
-        <p className="mb-3 text-xs text-dim">
-          Hora: {item.scheduled_time || 'config default'}
-        </p>
+        <p className="mb-1 text-xs text-dim">Tema: {item.topic || "AI auto-trending"}</p>
+        <p className="mb-3 text-xs text-dim">Hora: {item.scheduled_time || "config default"}</p>
         {item.result_message && (
           <p className="mb-3 text-xs text-red/80 break-words">{item.result_message}</p>
         )}
@@ -122,7 +126,7 @@ function CardPopover({ item, onRemove, onClose }: CardPopoverProps) {
           >
             Cerrar
           </button>
-          {item.status === 'pending' && (
+          {item.status === "pending" && (
             <button
               type="button"
               onClick={onRemove}
@@ -138,7 +142,8 @@ function CardPopover({ item, onRemove, onClose }: CardPopoverProps) {
 }
 
 export function SchedulerPanel() {
-  const { data, loading, saving, toggle, saveConfig, addItem, removeItem, autoFill } = useScheduler();
+  const { data, loading, saving, toggle, saveConfig, addItem, removeItem, autoFill } =
+    useScheduler();
   const [configOpen, setConfigOpen] = useState(false);
   const [addDate, setAddDate] = useState<string | null>(null);
   const [popoverItem, setPopoverItem] = useState<QueueItem | null>(null);
@@ -175,7 +180,20 @@ export function SchedulerPanel() {
     const dayName = DAY_NAMES[dayIdx];
     const dayLabel = DAY_LABELS_SHORT[dayName];
     const dd = d.getDate();
-    const monthNames = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const monthNames = [
+      "ene",
+      "feb",
+      "mar",
+      "abr",
+      "may",
+      "jun",
+      "jul",
+      "ago",
+      "sep",
+      "oct",
+      "nov",
+      "dic",
+    ];
     const dateLabel = `${dd} ${monthNames[d.getMonth()]}`;
     const dayCfg = config.schedule[dayName] || { enabled: false, time: null };
     const item = queue.find((q) => q.scheduled_date === dateStr);
@@ -218,12 +236,12 @@ export function SchedulerPanel() {
             onClick={toggle}
             disabled={saving}
             className={`relative h-7 w-12 rounded-full transition-colors ${
-              config.enabled ? 'bg-green' : 'bg-border-dark'
+              config.enabled ? "bg-green" : "bg-border-dark"
             }`}
           >
             <span
               className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-transform ${
-                config.enabled ? 'translate-x-6' : 'translate-x-1'
+                config.enabled ? "translate-x-6" : "translate-x-1"
               }`}
             />
           </button>
@@ -235,10 +253,9 @@ export function SchedulerPanel() {
             const isToday = day.dateStr === todayStr;
             const isDisabled = !day.enabled;
             const item = day.item;
-            const status = item?.status || (isDisabled ? 'disabled' : 'empty');
             const border = isDisabled
-              ? 'border-border-dark/40'
-              : cardBorderColor(item?.status || '', isToday);
+              ? "border-border-dark/40"
+              : cardBorderColor(item?.status || "", isToday);
 
             return (
               <div
@@ -252,22 +269,24 @@ export function SchedulerPanel() {
                   }
                 }}
                 className={`flex w-[110px] cursor-pointer flex-col items-center rounded-lg border-2 px-2 py-2.5 transition-colors hover:bg-surface-dark ${border} ${
-                  isDisabled ? 'opacity-40 cursor-default' : ''
+                  isDisabled ? "opacity-40 cursor-default" : ""
                 }`}
               >
-                <span className={`text-[11px] font-bold ${isToday ? 'text-primary' : 'text-text-subtle'}`}>
+                <span
+                  className={`text-[11px] font-bold ${isToday ? "text-primary" : "text-text-subtle"}`}
+                >
                   {day.dayLabel} {day.dateLabel}
                 </span>
                 {isDisabled ? (
                   <span className="mt-1 text-[10px] text-dim">descanso</span>
                 ) : (
                   <>
-                    <span className="mt-0.5 font-mono text-xs text-dim">{day.time || '--:--'}</span>
+                    <span className="mt-0.5 font-mono text-xs text-dim">{day.time || "--:--"}</span>
                     {item ? (
                       <>
                         <div className="mt-1">{statusBadge(item.status)}</div>
                         <span className="mt-0.5 max-w-full truncate text-center text-[10px] text-dim">
-                          {item.topic || 'AI auto'}
+                          {item.topic || "AI auto"}
                         </span>
                       </>
                     ) : (
@@ -321,12 +340,7 @@ export function SchedulerPanel() {
         onSave={saveConfig}
       />
 
-      {addDate && (
-        <AddPopover
-          onAdd={handleAddItem}
-          onClose={() => setAddDate(null)}
-        />
-      )}
+      {addDate && <AddPopover onAdd={handleAddItem} onClose={() => setAddDate(null)} />}
 
       {popoverItem && (
         <CardPopover

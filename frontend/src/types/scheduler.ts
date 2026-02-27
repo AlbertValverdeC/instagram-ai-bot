@@ -14,7 +14,7 @@ export interface QueueItem {
   scheduled_time: string | null;
   topic: string | null;
   template: number | null;
-  status: 'pending' | 'processing' | 'completed' | 'error' | 'skipped';
+  status: "pending" | "processing" | "completed" | "error" | "skipped";
   post_id: number | null;
   result_message: string | null;
   created_at: string;

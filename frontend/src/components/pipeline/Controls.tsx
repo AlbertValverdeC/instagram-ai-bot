@@ -4,17 +4,17 @@ interface ControlsProps {
   selectedTemplate: number | null;
   onTopicChange: (value: string) => void;
   onSelectTemplate: (template: number | null) => void;
-  onRun: (mode: 'test' | 'dry-run' | 'live') => void;
+  onRun: (mode: "test" | "dry-run" | "live") => void;
   onSearchTopic: () => void;
 }
 
 const templates = [
-  { label: 'A', value: null, style: '' },
-  { label: '', value: 0, style: 'bg-gradient-to-br from-[#4338ca] to-[#1e3a8a]' },
-  { label: '', value: 1, style: 'bg-gradient-to-br from-[#ec4899] to-[#e11d48]' },
-  { label: '', value: 2, style: 'bg-gradient-to-br from-[#10b981] to-[#0f766e]' },
-  { label: '', value: 3, style: 'bg-gradient-to-br from-[#f97316] to-[#d97706]' },
-  { label: '', value: 4, style: 'bg-gradient-to-br from-[#1c2630] to-[#0a0f1a]' },
+  { label: "A", value: null, style: "" },
+  { label: "", value: 0, style: "bg-gradient-to-br from-[#4338ca] to-[#1e3a8a]" },
+  { label: "", value: 1, style: "bg-gradient-to-br from-[#ec4899] to-[#e11d48]" },
+  { label: "", value: 2, style: "bg-gradient-to-br from-[#10b981] to-[#0f766e]" },
+  { label: "", value: 3, style: "bg-gradient-to-br from-[#f97316] to-[#d97706]" },
+  { label: "", value: 4, style: "bg-gradient-to-br from-[#1c2630] to-[#0a0f1a]" },
 ];
 
 export function Controls({
@@ -34,7 +34,7 @@ export function Controls({
           <button
             type="button"
             disabled={running}
-            onClick={() => onRun('test')}
+            onClick={() => onRun("test")}
             title="Usa datos de ejemplo (sin llamadas a APIs). Ideal para probar el diseño visual sin gastar créditos."
             className="rounded-md px-4 py-2 text-sm font-medium text-text-subtle transition-colors hover:bg-border-dark hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -43,7 +43,7 @@ export function Controls({
           <button
             type="button"
             disabled={running}
-            onClick={() => onRun('dry-run')}
+            onClick={() => onRun("dry-run")}
             title="Ejecuta el pipeline completo con APIs reales, pero NO publica en Instagram."
             className="rounded-md px-4 py-2 text-sm font-medium text-text-subtle transition-colors hover:bg-border-dark hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -52,7 +52,7 @@ export function Controls({
           <button
             type="button"
             disabled={running}
-            onClick={() => onRun('live')}
+            onClick={() => onRun("live")}
             title="Nivel 4: flujo end-to-end completo (research + contenido + diseño + publicación real en Instagram)."
             className="rounded-md border border-red-500/50 bg-red-500/10 px-4 py-2 text-sm font-bold text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.2)] disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -72,7 +72,7 @@ export function Controls({
               value={topic}
               onChange={(e) => onTopicChange(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === "Enter") {
                   e.preventDefault();
                   onSearchTopic();
                 }
@@ -95,22 +95,24 @@ export function Controls({
 
       {/* Templates */}
       <div className="flex w-full items-center gap-4 overflow-x-auto pb-2 xl:w-auto xl:pb-0">
-        <span className="whitespace-nowrap text-xs font-medium uppercase tracking-wider text-text-subtle">Templates</span>
+        <span className="whitespace-nowrap text-xs font-medium uppercase tracking-wider text-text-subtle">
+          Templates
+        </span>
         <div className="flex gap-2">
           {templates.map((tpl) => {
             const active = selectedTemplate === tpl.value;
             return (
               <button
-                key={tpl.value === null ? 'auto' : tpl.value}
+                key={tpl.value === null ? "auto" : tpl.value}
                 type="button"
                 disabled={running}
                 onClick={() => onSelectTemplate(tpl.value)}
                 className={`relative size-10 rounded-lg border transition-opacity ${
                   active
-                    ? 'ring-2 ring-primary ring-offset-2 ring-offset-secondary-dark'
-                    : 'border-transparent opacity-50 hover:border-white/20 hover:opacity-100'
-                } ${tpl.style || 'border-border-dark bg-surface-dark'} flex items-center justify-center text-xs font-bold text-text-subtle`}
-                title={tpl.value === null ? 'Auto — Rota automáticamente' : `Template ${tpl.value}`}
+                    ? "ring-2 ring-primary ring-offset-2 ring-offset-secondary-dark"
+                    : "border-transparent opacity-50 hover:border-white/20 hover:opacity-100"
+                } ${tpl.style || "border-border-dark bg-surface-dark"} flex items-center justify-center text-xs font-bold text-text-subtle`}
+                title={tpl.value === null ? "Auto — Rota automáticamente" : `Template ${tpl.value}`}
               >
                 {tpl.label}
                 {active && tpl.value !== null && (

@@ -1,4 +1,4 @@
-import type { PostRecord } from '../../types';
+import type { PostRecord } from "../../types";
 
 interface PostDetailModalProps {
   open: boolean;
@@ -12,15 +12,15 @@ function jsonPreview(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2);
   } catch {
-    return String(value ?? '');
+    return String(value ?? "");
   }
 }
 
 export function PostDetailModal({ open, post, loading, onClose, onPublish }: PostDetailModalProps) {
   if (!open) return null;
 
-  const status = String(post?.status || '');
-  const canPublish = status === 'draft';
+  const status = String(post?.status || "");
+  const canPublish = status === "draft";
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">
@@ -45,8 +45,10 @@ export function PostDetailModal({ open, post, loading, onClose, onPublish }: Pos
             <div className="space-y-5">
               <div className="rounded-lg border border-border-dark bg-surface-dark p-4">
                 <p className="text-xs uppercase tracking-wide text-text-subtle">Meta</p>
-                <p className="mt-2 text-sm text-white">#{post.id} · {String(post.status || '-')}</p>
-                <p className="mt-1 text-sm text-slate-300">{String(post.topic || '-')}</p>
+                <p className="mt-2 text-sm text-white">
+                  #{post.id} · {String(post.status || "-")}
+                </p>
+                <p className="mt-1 text-sm text-slate-300">{String(post.topic || "-")}</p>
                 {canPublish && (
                   <button
                     type="button"
@@ -60,13 +62,17 @@ export function PostDetailModal({ open, post, loading, onClose, onPublish }: Pos
 
               <div className="grid gap-4 md:grid-cols-2">
                 <section className="rounded-lg border border-border-dark bg-surface-dark p-4">
-                  <p className="mb-2 text-xs uppercase tracking-wide text-text-subtle">Propuesta seleccionada</p>
+                  <p className="mb-2 text-xs uppercase tracking-wide text-text-subtle">
+                    Propuesta seleccionada
+                  </p>
                   <pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-300">
                     {jsonPreview(post.proposal_payload)}
                   </pre>
                 </section>
                 <section className="rounded-lg border border-border-dark bg-surface-dark p-4">
-                  <p className="mb-2 text-xs uppercase tracking-wide text-text-subtle">Topic payload</p>
+                  <p className="mb-2 text-xs uppercase tracking-wide text-text-subtle">
+                    Topic payload
+                  </p>
                   <pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-300">
                     {jsonPreview(post.topic_payload)}
                   </pre>
@@ -74,14 +80,18 @@ export function PostDetailModal({ open, post, loading, onClose, onPublish }: Pos
               </div>
 
               <section className="rounded-lg border border-border-dark bg-surface-dark p-4">
-                <p className="mb-2 text-xs uppercase tracking-wide text-text-subtle">Content payload</p>
+                <p className="mb-2 text-xs uppercase tracking-wide text-text-subtle">
+                  Content payload
+                </p>
                 <pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-300">
                   {jsonPreview(post.content_payload)}
                 </pre>
               </section>
 
               <section className="rounded-lg border border-border-dark bg-surface-dark p-4">
-                <p className="mb-2 text-xs uppercase tracking-wide text-text-subtle">Strategy payload</p>
+                <p className="mb-2 text-xs uppercase tracking-wide text-text-subtle">
+                  Strategy payload
+                </p>
                 <pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-300">
                   {jsonPreview(post.strategy_payload)}
                 </pre>

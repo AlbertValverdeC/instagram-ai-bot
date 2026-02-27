@@ -19,7 +19,9 @@ export function SlidesPreview({ slides, cacheBust, onOpen }: SlidesPreviewProps)
       {/* Grid */}
       <div className="flex-1 bg-[#0f151b] p-6">
         {slides.length === 0 ? (
-          <p className="text-sm italic text-text-subtle">Sin slides. Ejecuta el pipeline para generarlos.</p>
+          <p className="text-sm italic text-text-subtle">
+            Sin slides. Ejecuta el pipeline para generarlos.
+          </p>
         ) : (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {slides.map((slide, index) => {
@@ -39,7 +41,7 @@ export function SlidesPreview({ slides, cacheBust, onOpen }: SlidesPreviewProps)
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
                   <div className="absolute right-2 top-2 rounded border border-white/10 bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-white backdrop-blur-sm">
-                    {String(index + 1).padStart(2, '0')}
+                    {String(index + 1).padStart(2, "0")}
                   </div>
                 </button>
               );

@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import random
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import requests
 
@@ -38,7 +38,7 @@ GRAPH_API_BASE = f"https://graph.facebook.com/{_normalize_graph_version(GRAPH_AP
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _parse_graph_datetime(value: str | None) -> datetime | None:
@@ -173,8 +173,7 @@ def _graph_get(path: str, params: dict, *, timeout: int = 30, retries: int = 3) 
             continue
 
         raise RuntimeError(
-            f"Meta GET {path} failed: {err_text}"
-            f" | details(code={details['code']},subcode={details['subcode']})"
+            f"Meta GET {path} failed: {err_text} | details(code={details['code']},subcode={details['subcode']})"
         )
 
     raise RuntimeError(f"Meta GET {path} failed after retries")
@@ -206,7 +205,7 @@ def _is_media_candidate_for_post(*, post: dict, media: dict, max_age_hours: int)
 
     post_created = post.get("created_at")
     if isinstance(post_created, datetime):
-        created_at = post_created if post_created.tzinfo else post_created.replace(tzinfo=timezone.utc)
+        created_at = post_created if post_created.tzinfo else post_created.replace(tzinfo=UTC)
     else:
         created_at = None
     media_ts = _parse_graph_datetime(media.get("timestamp"))
@@ -297,7 +296,7 @@ def _extract_insights(payload: dict) -> dict:
         if not name or not isinstance(values, list) or not values:
             continue
         value = values[0].get("value") if isinstance(values[0], dict) else None
-        if isinstance(value, (int, float)):
+        if isinstance(value, int | float):
             out[name] = value
     return out
 

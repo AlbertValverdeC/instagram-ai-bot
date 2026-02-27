@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 
-import { apiClient } from '../../api/client';
-import type { ApiKeyItem } from '../../types';
+import { apiClient } from "../../api/client";
+import type { ApiKeyItem } from "../../types";
 
 interface KeysModalProps {
   open: boolean;
@@ -11,7 +11,10 @@ interface KeysModalProps {
 export function KeysModal({ open, onClose }: KeysModalProps) {
   const [items, setItems] = useState<ApiKeyItem[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
-  const [message, setMessage] = useState<{ text: string; color: 'green' | 'red' | 'orange' } | null>(null);
+  const [message, setMessage] = useState<{
+    text: string;
+    color: "green" | "red" | "orange";
+  } | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -24,11 +27,11 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
         setItems(data);
         const values: Record<string, string> = {};
         data.forEach((item) => {
-          values[item.key] = item.secret ? '' : item.value;
+          values[item.key] = item.secret ? "" : item.value;
         });
         setDraft(values);
       } catch {
-        setMessage({ text: 'Error cargando API keys.', color: 'red' });
+        setMessage({ text: "Error cargando API keys.", color: "red" });
       }
     })();
   }, [open]);
@@ -46,29 +49,29 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
   const save = async () => {
     const payload: Record<string, string> = {};
     items.forEach((item) => {
-      const value = (draft[item.key] || '').trim();
-      if (value && !value.startsWith('***')) {
+      const value = (draft[item.key] || "").trim();
+      if (value && !value.startsWith("***")) {
         payload[item.key] = value;
       }
     });
 
     if (Object.keys(payload).length === 0) {
-      setMessage({ text: 'No hay cambios para guardar', color: 'orange' });
+      setMessage({ text: "No hay cambios para guardar", color: "orange" });
       return;
     }
 
     try {
       const result = await apiClient.saveKeys(payload);
-      setMessage({ text: `Guardado: ${result.saved} clave(s) actualizadas`, color: 'green' });
+      setMessage({ text: `Guardado: ${result.saved} clave(s) actualizadas`, color: "green" });
       const data = await apiClient.getKeys();
       setItems(data);
       const values: Record<string, string> = {};
       data.forEach((item) => {
-        values[item.key] = item.secret ? '' : item.value;
+        values[item.key] = item.secret ? "" : item.value;
       });
       setDraft(values);
     } catch {
-      setMessage({ text: 'Error al guardar', color: 'red' });
+      setMessage({ text: "Error al guardar", color: "red" });
     }
   };
 
@@ -77,14 +80,21 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60"
+      onClick={onClose}
+    >
       <div
         className="max-h-[90vh] w-[700px] max-w-[95vw] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 flex items-center justify-between border-b border-border bg-card px-6 py-5">
           <h2 className="text-lg font-bold">🔑 API Keys</h2>
-          <button type="button" onClick={onClose} className="text-2xl text-dim transition hover:text-text">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-2xl text-dim transition hover:text-text"
+          >
             ×
           </button>
         </div>
@@ -104,11 +114,13 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
                       <div className="mb-1 flex items-center gap-2 text-sm font-semibold">
                         <span
                           className={`inline-block h-1.5 w-1.5 rounded-full ${
-                            item.configured ? 'bg-green' : item.required ? 'bg-red' : 'bg-dim'
+                            item.configured ? "bg-green" : item.required ? "bg-red" : "bg-dim"
                           }`}
                         />
                         <span>{item.label}</span>
-                        {item.required ? <span className="text-[10px] font-bold text-red">REQUERIDA</span> : null}
+                        {item.required ? (
+                          <span className="text-[10px] font-bold text-red">REQUERIDA</span>
+                        ) : null}
                         {item.url ? (
                           <a
                             href={item.url}
@@ -122,10 +134,12 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
                       </div>
                       <p className="mb-1 text-xs text-dim">{item.hint}</p>
                       <input
-                        type={item.secret ? 'password' : 'text'}
+                        type={item.secret ? "password" : "text"}
                         placeholder={item.configured && item.secret ? item.value : item.placeholder}
-                        value={draft[item.key] ?? ''}
-                        onChange={(e) => setDraft((prev) => ({ ...prev, [item.key]: e.target.value }))}
+                        value={draft[item.key] ?? ""}
+                        onChange={(e) =>
+                          setDraft((prev) => ({ ...prev, [item.key]: e.target.value }))
+                        }
                         className="w-full rounded-md border border-border bg-code px-3 py-2 font-mono text-xs text-text outline-none focus:border-accent"
                       />
                     </div>
@@ -139,10 +153,14 @@ export function KeysModal({ open, onClose }: KeysModalProps) {
         <div className="sticky bottom-0 flex items-center justify-between border-t border-border bg-card px-6 py-4">
           <span
             className={`text-sm ${
-              message?.color === 'green' ? 'text-green' : message?.color === 'red' ? 'text-red' : 'text-orange'
+              message?.color === "green"
+                ? "text-green"
+                : message?.color === "red"
+                  ? "text-red"
+                  : "text-orange"
             }`}
           >
-            {message?.text || ''}
+            {message?.text || ""}
           </span>
           <button
             type="button"

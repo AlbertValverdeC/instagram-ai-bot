@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import shutil
 
 from flask import Blueprint, jsonify, request
 
 from config.settings import OPENAI_API_KEY
 from dashboard.auth import require_api_token
-from dashboard.config import DATA_DIR
+from dashboard.config import DATA_DIR, OUTPUT_DIR
 from dashboard.services.pipeline_runner import is_running
 
 try:
@@ -14,7 +15,8 @@ try:
     from modules.content_generator import generate as generate_content
     from modules.content_generator import generate_text_proposals
     from modules.engagement import get_strategy
-    from modules.post_store import create_draft_post, ensure_schema as ensure_post_store_schema
+    from modules.post_store import create_draft_post
+    from modules.post_store import ensure_schema as ensure_post_store_schema
     from modules.researcher import find_trending_topic, find_trending_topics
 except Exception:
     create_slides = None
@@ -112,11 +114,13 @@ def api_generate_proposals():
         _safe_save_json(DATA_DIR / "last_topics.json", topics)
 
         # Return the first topic as primary (for backwards compat) + all topics
-        return jsonify({
-            "topic": topics[0] if topics else {},
-            "topics": topics,
-            "proposals": proposals,
-        })
+        return jsonify(
+            {
+                "topic": topics[0] if topics else {},
+                "topics": topics,
+                "proposals": proposals,
+            }
+        )
     except Exception as e:
         return jsonify({"error": f"No se pudieron generar propuestas: {e}"}), 500
 
@@ -172,6 +176,13 @@ def api_create_draft():
             content=content,
             strategy=strategy,
         )
+
+        # Persist slides for this draft so publish reuses them (no regeneration)
+        draft_dir = OUTPUT_DIR / "drafts" / str(post_id)
+        draft_dir.mkdir(parents=True, exist_ok=True)
+        for p in image_paths:
+            if p.exists():
+                shutil.copy2(p, draft_dir / p.name)
 
         _safe_save_json(DATA_DIR / "last_topic.json", topic)
         _safe_save_json(DATA_DIR / "last_content.json", content)

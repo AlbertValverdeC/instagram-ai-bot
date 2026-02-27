@@ -14,7 +14,7 @@ import argparse
 import hashlib
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -34,12 +34,12 @@ def _parse_published_at(raw: str | None) -> datetime | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt
 
 
 def _fallback_topic_hash(topic: str, media_id: str) -> str:
-    return hashlib.sha256(f"{topic}|{media_id}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{topic}|{media_id}".encode()).hexdigest()
 
 
 def main():
@@ -84,9 +84,11 @@ def main():
                 skipped_invalid += 1
                 continue
 
-            exists = conn.execute(
-                select(posts_table.c.id).where(posts_table.c.ig_media_id == media_id).limit(1)
-            ).mappings().first()
+            exists = (
+                conn.execute(select(posts_table.c.id).where(posts_table.c.ig_media_id == media_id).limit(1))
+                .mappings()
+                .first()
+            )
             if exists:
                 skipped_existing += 1
                 continue

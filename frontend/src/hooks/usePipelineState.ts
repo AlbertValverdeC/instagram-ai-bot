@@ -1,15 +1,15 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from "react";
 
-import { apiClient } from '../api/client';
-import { usePolling } from './usePolling';
-import type { ApiStatusResponse, PipelineStatus } from '../types';
+import { apiClient } from "../api/client";
+import { usePolling } from "./usePolling";
+import type { ApiStatusResponse, PipelineStatus } from "../types";
 
 const INITIAL_STATUS: ApiStatusResponse = {
-  status: 'idle',
-  output: 'Listo. Selecciona un modo y haz click para ejecutar el pipeline.',
+  status: "idle",
+  output: "Listo. Selecciona un modo y haz click para ejecutar el pipeline.",
   error_summary: null,
   mode: null,
-  elapsed: null
+  elapsed: null,
 };
 
 export function usePipelineState() {
@@ -23,33 +23,33 @@ export function usePipelineState() {
       const err = error as Error & { status?: number };
       if (err.status === 401) {
         setStatusState({
-          status: 'error',
-          output: 'Error: Unauthorized. Configura el token en la parte superior derecha.',
-          error_summary: 'Unauthorized',
+          status: "error",
+          output: "Error: Unauthorized. Configura el token en la parte superior derecha.",
+          error_summary: "Unauthorized",
           mode: null,
-          elapsed: null
+          elapsed: null,
         });
         return;
       }
       setStatusState((prev) => ({
         ...prev,
-        status: 'error',
+        status: "error",
         output: prev.output || `Error de conexión: ${err.message}`,
-        error_summary: err.message
+        error_summary: err.message,
       }));
     }
   }, []);
 
-  const running = statusState.status === 'running';
+  const running = statusState.status === "running";
   usePolling(refreshStatus, 1500, running);
 
   const setRunningLabel = useCallback((modeLabel: string) => {
     setStatusState({
-      status: 'running',
+      status: "running",
       output: `Iniciando pipeline (${modeLabel})...\n`,
       error_summary: null,
       mode: modeLabel,
-      elapsed: null
+      elapsed: null,
     });
   }, []);
 
@@ -58,7 +58,7 @@ export function usePipelineState() {
     return {
       ...statusState,
       status,
-      output: statusState.output || 'Esperando output...'
+      output: statusState.output || "Esperando output...",
     };
   }, [statusState]);
 
@@ -67,6 +67,6 @@ export function usePipelineState() {
     running,
     refreshStatus,
     setRunningLabel,
-    setStatusState
+    setStatusState,
   };
 }

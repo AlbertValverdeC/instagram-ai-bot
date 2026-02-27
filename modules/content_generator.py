@@ -199,9 +199,27 @@ def _limit_highlights(text: str, max_segments: int, max_words_per_segment: int) 
         return value.replace("**", "")
 
     signal_words = {
-        "crisis", "récord", "record", "impacto", "cae", "sube", "lanza", "lanzó",
-        "despidos", "empleos", "fmi", "pib", "crecimiento", "inflación", "riesgo",
-        "gana", "pierde", "subida", "bajada", "alerta", "urgente",
+        "crisis",
+        "récord",
+        "record",
+        "impacto",
+        "cae",
+        "sube",
+        "lanza",
+        "lanzó",
+        "despidos",
+        "empleos",
+        "fmi",
+        "pib",
+        "crecimiento",
+        "inflación",
+        "riesgo",
+        "gana",
+        "pierde",
+        "subida",
+        "bajada",
+        "alerta",
+        "urgente",
     }
 
     def score_phrase(phrase: str) -> int:
@@ -230,7 +248,7 @@ def _limit_highlights(text: str, max_segments: int, max_words_per_segment: int) 
     pieces = []
     cursor = 0
     for idx, m in enumerate(pattern.finditer(value)):
-        pieces.append(value[cursor:m.start()].replace("**", ""))
+        pieces.append(value[cursor : m.start()].replace("**", ""))
         phrase = " ".join(m.group(1).split())
         if idx in keep_idx and phrase:
             words = phrase.split()
@@ -257,10 +275,7 @@ def _clarify_ambiguous_text(text: str) -> str:
 
 def _tokenize_overlap(text: str) -> set[str]:
     """Lightweight tokenization used to verify factual overlap."""
-    return {
-        t for t in re.findall(r"[A-Za-zÀ-ÿ0-9]+", str(text or "").lower())
-        if len(t) >= 3
-    }
+    return {t for t in re.findall(r"[A-Za-zÀ-ÿ0-9]+", str(text or "").lower()) if len(t) >= 3}
 
 
 _GENERIC_CONTENT_TOKENS = {
@@ -294,21 +309,76 @@ _GENERIC_CONTENT_TOKENS = {
 }
 
 _TITLE_STOPWORDS = {
-    "el", "la", "los", "las", "de", "del", "un", "una", "y", "en", "con", "para",
-    "que", "por", "se", "su", "sus", "como", "más", "mas", "al", "lo", "ya",
-    "this", "that", "with", "from", "into", "over", "under", "today",
+    "el",
+    "la",
+    "los",
+    "las",
+    "de",
+    "del",
+    "un",
+    "una",
+    "y",
+    "en",
+    "con",
+    "para",
+    "que",
+    "por",
+    "se",
+    "su",
+    "sus",
+    "como",
+    "más",
+    "mas",
+    "al",
+    "lo",
+    "ya",
+    "this",
+    "that",
+    "with",
+    "from",
+    "into",
+    "over",
+    "under",
+    "today",
 }
 
 _TITLE_VERB_TOKENS = {
-    "es", "son", "fue", "fueron", "será", "serán",
-    "puede", "pueden", "podrá", "podrán",
-    "ofrece", "ofrecen", "ofreció", "ofrecerá",
-    "presenta", "presentan", "presentó",
-    "viene", "vienen", "vino",
-    "permite", "permiten", "permitió",
-    "busca", "buscan", "mejora", "mejora", "mejoran",
-    "integra", "integran", "usa", "usan", "tiene", "tienen",
-    "interactúa", "interactúan", "interactuar",
+    "es",
+    "son",
+    "fue",
+    "fueron",
+    "será",
+    "serán",
+    "puede",
+    "pueden",
+    "podrá",
+    "podrán",
+    "ofrece",
+    "ofrecen",
+    "ofreció",
+    "ofrecerá",
+    "presenta",
+    "presentan",
+    "presentó",
+    "viene",
+    "vienen",
+    "vino",
+    "permite",
+    "permiten",
+    "permitió",
+    "busca",
+    "buscan",
+    "mejora",
+    "mejoran",
+    "integra",
+    "integran",
+    "usa",
+    "usan",
+    "tiene",
+    "tienen",
+    "interactúa",
+    "interactúan",
+    "interactuar",
 }
 
 _TITLE_LABEL_PREFIX_RE = re.compile(
@@ -623,8 +693,7 @@ def _normalize_content(content: dict, topic: dict) -> dict:
     cover_src = next((s for s in slides_in if isinstance(s, dict) and _safe_text(s.get("type")).lower() == "cover"), {})
     cta_src = next((s for s in slides_in if isinstance(s, dict) and _safe_text(s.get("type")).lower() == "cta"), {})
     content_src = [
-        s for s in slides_in
-        if isinstance(s, dict) and _safe_text(s.get("type")).lower() not in ("cover", "cta")
+        s for s in slides_in if isinstance(s, dict) and _safe_text(s.get("type")).lower() not in ("cover", "cta")
     ]
 
     repaired_slides = []
@@ -633,15 +702,19 @@ def _normalize_content(content: dict, topic: dict) -> dict:
     cover_title = _safe_text(cover_src.get("title")) or "ACTUALIDAD TECH"
     cover_title = _clarify_ambiguous_text(cover_title)
     cover_title = _clean_punctuation_spacing(cover_title)
-    cover_subtitle = _safe_text(cover_src.get("subtitle")) or f"LO MÁS IMPORTANTE SOBRE **{topic_title.upper()}** EN 60 SEGUNDOS"
+    cover_subtitle = (
+        _safe_text(cover_src.get("subtitle")) or f"LO MÁS IMPORTANTE SOBRE **{topic_title.upper()}** EN 60 SEGUNDOS"
+    )
     cover_subtitle = _clarify_ambiguous_text(cover_subtitle)
     cover_subtitle = _clean_punctuation_spacing(cover_subtitle)
     cover_subtitle = _limit_highlights(cover_subtitle, max_segments=2, max_words_per_segment=4)
-    repaired_slides.append({
-        "type": "cover",
-        "title": cover_title,
-        "subtitle": cover_subtitle,
-    })
+    repaired_slides.append(
+        {
+            "type": "cover",
+            "title": cover_title,
+            "subtitle": cover_subtitle,
+        }
+    )
 
     # Content slides (fixed count)
     for i in range(NUM_CONTENT_SLIDES):
@@ -656,12 +729,14 @@ def _normalize_content(content: dict, topic: dict) -> dict:
         body = _clean_punctuation_spacing(body, keep_newlines=True)
         title = _limit_highlights(title, max_segments=1, max_words_per_segment=3)
         body = _limit_highlights(body, max_segments=1, max_words_per_segment=4)
-        repaired_slides.append({
-            "type": "content",
-            "number": i + 1,
-            "title": title,
-            "body": body,
-        })
+        repaired_slides.append(
+            {
+                "type": "content",
+                "number": i + 1,
+                "title": title,
+                "body": body,
+            }
+        )
 
     # CTA
     cta_title = _safe_text(cta_src.get("title")) or "¿TE HA SERVIDO ESTE RESUMEN?"
@@ -672,13 +747,17 @@ def _normalize_content(content: dict, topic: dict) -> dict:
     cta_body = _clean_punctuation_spacing(cta_body, keep_newlines=True)
     cta_title = _limit_highlights(cta_title, max_segments=1, max_words_per_segment=3)
     cta_body = _limit_highlights(cta_body, max_segments=1, max_words_per_segment=4)
-    repaired_slides.append({
-        "type": "cta",
-        "title": cta_title,
-        "body": cta_body,
-    })
+    repaired_slides.append(
+        {
+            "type": "cta",
+            "title": cta_title,
+            "body": cta_body,
+        }
+    )
 
-    caption = _safe_text(content.get("caption")) or f"Lo más importante sobre {topic_title} en formato carrusel. ¿Qué opinas?"
+    caption = (
+        _safe_text(content.get("caption")) or f"Lo más importante sobre {topic_title} en formato carrusel. ¿Qué opinas?"
+    )
     alt_text = _safe_text(content.get("alt_text")) or f"Carrusel informativo sobre {topic_title}."
     hashtags = content.get("hashtag_suggestions")
     if not isinstance(hashtags, list) or len(hashtags) == 0:
@@ -882,6 +961,7 @@ def generate(topic: dict, proposal: dict | None = None) -> dict:
     if CONTENT_USE_DIRECTOR:
         try:
             from modules.prompt_director import PromptDirector
+
             director = PromptDirector()
             candidate = director.craft_content_prompt(topic)
             if _is_viable_director_content_prompt(candidate):

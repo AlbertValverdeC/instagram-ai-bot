@@ -44,6 +44,12 @@ def _scheduler_tick() -> None:
     from zoneinfo import ZoneInfo
 
     from config.settings import TIMEZONE
+    from dashboard.services.pipeline_runner import (
+        get_state_snapshot,
+        is_running,
+        run_pipeline,
+        set_running,
+    )
     from modules.post_store import (
         DAY_NAMES,
         get_queue_item_for_date,
@@ -52,12 +58,6 @@ def _scheduler_tick() -> None:
         mark_queue_item_error,
         mark_queue_item_processing,
         recover_stale_processing,
-    )
-    from dashboard.services.pipeline_runner import (
-        get_state_snapshot,
-        is_running,
-        run_pipeline,
-        set_running,
     )
 
     config = get_scheduler_config()

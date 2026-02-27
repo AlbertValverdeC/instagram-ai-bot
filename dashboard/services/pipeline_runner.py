@@ -251,9 +251,7 @@ def run_pipeline(mode: str, template: int | None, topic: str | None = None, step
         with _lock:
             _state["output"] = "".join(output_lines)
             _state["status"] = "done" if proc.returncode == 0 else "error"
-            _state["error_summary"] = (
-                None if proc.returncode == 0 else extract_pipeline_error_summary(_state["output"])
-            )
+            _state["error_summary"] = None if proc.returncode == 0 else extract_pipeline_error_summary(_state["output"])
             _state["finished_at"] = time.time()
     except Exception as e:
         with _lock:

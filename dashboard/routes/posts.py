@@ -16,17 +16,35 @@ try:
     from modules.post_store import (
         PUBLISHABLE_STATUSES,
         RETRYABLE_STATUSES,
+    )
+    from modules.post_store import (
+        count_recent_publishes as db_count_recent_publishes,
+    )
+    from modules.post_store import (
         ensure_schema as ensure_post_store_schema,
+    )
+    from modules.post_store import (
         get_db_runtime_info as get_post_store_db_runtime_info,
+    )
+    from modules.post_store import (
         get_post as db_get_post,
+    )
+    from modules.post_store import (
         list_posts as db_list_posts,
+    )
+    from modules.post_store import (
         mark_post_publish_attempt as db_mark_post_publish_attempt,
+    )
+    from modules.post_store import (
         mark_post_publish_error as db_mark_post_publish_error,
+    )
+    from modules.post_store import (
         mark_post_published as db_mark_post_published,
     )
 except Exception:
     PUBLISHABLE_STATUSES = {"draft", "generated", "publish_error"}
     RETRYABLE_STATUSES = {"generated", "publish_error"}
+    db_count_recent_publishes = None
     ensure_post_store_schema = None
     get_post_store_db_runtime_info = None
     db_get_post = None
@@ -113,8 +131,7 @@ def _publish_post(post_id: int, *, allowed_statuses: set[str], status_error_labe
             jsonify(
                 {
                     "error": (
-                        "No hay payload suficiente para publicar este post. "
-                        "Falta content_payload o strategy_payload."
+                        "No hay payload suficiente para publicar este post. Falta content_payload o strategy_payload."
                     )
                 }
             ),
@@ -128,9 +145,11 @@ def _publish_post(post_id: int, *, allowed_statuses: set[str], status_error_labe
 
         # Reuse saved draft slides if available (avoids regenerating AI images)
         draft_dir = OUTPUT_DIR / "drafts" / str(post_id)
-        saved_slides = sorted(
-            list(draft_dir.glob("slide_*.jpg")) + list(draft_dir.glob("slide_*.png"))
-        ) if draft_dir.exists() else []
+        saved_slides = (
+            sorted(list(draft_dir.glob("slide_*.jpg")) + list(draft_dir.glob("slide_*.png")))
+            if draft_dir.exists()
+            else []
+        )
         if saved_slides:
             # Copy saved draft slides back to OUTPUT_DIR for the publisher
             for src in saved_slides:
@@ -207,7 +226,11 @@ def api_posts():
         ensure_post_store_schema()
         limit = int((request.args.get("limit") or "20").strip() or "20")
         rows = db_list_posts(limit=limit)
-        return jsonify({"posts": rows})
+        rate_limit = db_count_recent_publishes() if db_count_recent_publishes else None
+        resp = {"posts": rows}
+        if rate_limit is not None:
+            resp["rate_limit"] = rate_limit
+        return jsonify(resp)
     except Exception as e:
         return jsonify({"error": f"No se pudo cargar publicaciones: {e}"}), 500
 

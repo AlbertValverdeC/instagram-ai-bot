@@ -1,6 +1,7 @@
 export interface DaySchedule {
   enabled: boolean;
   time: string | null;
+  posts_per_day: number;
 }
 
 export interface SchedulerConfig {

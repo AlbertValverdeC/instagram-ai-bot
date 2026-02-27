@@ -32,7 +32,11 @@ export function ScheduleConfigModal({ open, config, onClose, onSave }: ScheduleC
     setMessage(null);
   }, [open, config]);
 
-  const updateDay = (day: string, field: "enabled" | "time", value: boolean | string | null) => {
+  const updateDay = (
+    day: string,
+    field: "enabled" | "time" | "posts_per_day",
+    value: boolean | string | null | number,
+  ) => {
     setDraft((prev) => ({
       ...prev,
       [day]: {
@@ -80,7 +84,7 @@ export function ScheduleConfigModal({ open, config, onClose, onSave }: ScheduleC
 
         <div className="px-6 py-5 space-y-3">
           {DAY_ORDER.map((day) => {
-            const cfg = draft[day] || { enabled: false, time: null };
+            const cfg = draft[day] || { enabled: false, time: null, posts_per_day: 1 };
             return (
               <div
                 key={day}
@@ -107,6 +111,22 @@ export function ScheduleConfigModal({ open, config, onClose, onSave }: ScheduleC
                   onChange={(e) => updateDay(day, "time", e.target.value || null)}
                   className="rounded-md border border-border bg-bg px-2 py-1 font-mono text-xs text-text outline-none focus:border-accent disabled:opacity-30"
                 />
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-dim">posts/día</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={cfg.posts_per_day || 1}
+                    disabled={!cfg.enabled}
+                    onChange={(e) => {
+                      const parsed = Number.parseInt(e.target.value, 10);
+                      const safe = Number.isFinite(parsed) ? Math.min(10, Math.max(1, parsed)) : 1;
+                      updateDay(day, "posts_per_day", safe);
+                    }}
+                    className="w-16 rounded-md border border-border bg-bg px-2 py-1 text-xs text-text outline-none focus:border-accent disabled:opacity-30"
+                  />
+                </div>
               </div>
             );
           })}

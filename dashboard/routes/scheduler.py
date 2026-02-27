@@ -107,7 +107,12 @@ def save_config():
     if auth_error:
         return auth_error
 
-    from modules.post_store import DAY_NAMES, save_scheduler_config
+    from modules.post_store import (
+        DAY_NAMES,
+        SCHEDULER_MAX_POSTS_PER_DAY,
+        SCHEDULER_MIN_POSTS_PER_DAY,
+        save_scheduler_config,
+    )
 
     data = request.get_json(silent=True) or {}
     enabled = bool(data.get("enabled", False))
@@ -123,6 +128,24 @@ def save_config():
             t = day_cfg.get("time")
             if t is not None and not _TIME_RE.match(str(t)):
                 return jsonify({"error": f"Invalid time for {day}: {t}"}), 400
+            posts_per_day = day_cfg.get("posts_per_day")
+            if posts_per_day is not None:
+                try:
+                    posts_per_day_int = int(posts_per_day)
+                except (TypeError, ValueError):
+                    return jsonify({"error": f"Invalid posts_per_day for {day}: {posts_per_day}"}), 400
+                if posts_per_day_int < SCHEDULER_MIN_POSTS_PER_DAY or posts_per_day_int > SCHEDULER_MAX_POSTS_PER_DAY:
+                    return (
+                        jsonify(
+                            {
+                                "error": (
+                                    f"posts_per_day for {day} must be between "
+                                    f"{SCHEDULER_MIN_POSTS_PER_DAY} and {SCHEDULER_MAX_POSTS_PER_DAY}"
+                                )
+                            }
+                        ),
+                        400,
+                    )
 
     # Merge with current config if schedule not provided
     if not schedule:

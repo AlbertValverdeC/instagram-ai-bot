@@ -169,6 +169,7 @@ export function SchedulerPanel() {
     item: QueueItem | undefined;
     enabled: boolean;
     time: string | null;
+    postsPerDay: number;
   }> = [];
 
   for (let i = 0; i < 7; i++) {
@@ -195,7 +196,7 @@ export function SchedulerPanel() {
       "dic",
     ];
     const dateLabel = `${dd} ${monthNames[d.getMonth()]}`;
-    const dayCfg = config.schedule[dayName] || { enabled: false, time: null };
+    const dayCfg = config.schedule[dayName] || { enabled: false, time: null, posts_per_day: 1 };
     const item = queue.find((q) => q.scheduled_date === dateStr);
 
     days.push({
@@ -206,6 +207,7 @@ export function SchedulerPanel() {
       item,
       enabled: dayCfg.enabled,
       time: item?.scheduled_time || dayCfg.time,
+      postsPerDay: Number(dayCfg.posts_per_day || 1),
     });
   }
 
@@ -282,6 +284,7 @@ export function SchedulerPanel() {
                 ) : (
                   <>
                     <span className="mt-0.5 font-mono text-xs text-dim">{day.time || "--:--"}</span>
+                    <span className="mt-0.5 text-[10px] text-dim/70">{day.postsPerDay}/día</span>
                     {item ? (
                       <>
                         <div className="mt-1">{statusBadge(item.status)}</div>

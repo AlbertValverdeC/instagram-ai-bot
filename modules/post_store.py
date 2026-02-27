@@ -153,16 +153,18 @@ content_queue_table = Table(
 )
 
 DEFAULT_SCHEDULE = {
-    "monday": {"enabled": True, "time": "08:30"},
-    "tuesday": {"enabled": True, "time": "08:30"},
-    "wednesday": {"enabled": True, "time": "08:30"},
-    "thursday": {"enabled": True, "time": "08:30"},
-    "friday": {"enabled": True, "time": "08:30"},
-    "saturday": {"enabled": True, "time": "10:00"},
-    "sunday": {"enabled": False, "time": None},
+    "monday": {"enabled": True, "time": "08:30", "posts_per_day": 1},
+    "tuesday": {"enabled": True, "time": "08:30", "posts_per_day": 1},
+    "wednesday": {"enabled": True, "time": "08:30", "posts_per_day": 1},
+    "thursday": {"enabled": True, "time": "08:30", "posts_per_day": 1},
+    "friday": {"enabled": True, "time": "08:30", "posts_per_day": 1},
+    "saturday": {"enabled": True, "time": "10:00", "posts_per_day": 1},
+    "sunday": {"enabled": False, "time": None, "posts_per_day": 1},
 }
 
 DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+SCHEDULER_MIN_POSTS_PER_DAY = 1
+SCHEDULER_MAX_POSTS_PER_DAY = 10
 
 
 def _utc_now() -> datetime:
@@ -201,6 +203,39 @@ def _to_float(value) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_posts_per_day(value) -> int:
+    parsed = _to_int(value)
+    if parsed is None:
+        return SCHEDULER_MIN_POSTS_PER_DAY
+    return max(SCHEDULER_MIN_POSTS_PER_DAY, min(parsed, SCHEDULER_MAX_POSTS_PER_DAY))
+
+
+def _normalize_schedule(schedule: dict | None) -> dict:
+    normalized = {}
+    source = schedule if isinstance(schedule, dict) else {}
+    for day_name in DAY_NAMES:
+        default_cfg = DEFAULT_SCHEDULE[day_name]
+        day_cfg = source.get(day_name)
+        if not isinstance(day_cfg, dict):
+            day_cfg = {}
+
+        enabled = bool(day_cfg.get("enabled", default_cfg["enabled"]))
+        time_value = day_cfg.get("time", default_cfg["time"])
+        if time_value is not None:
+            time_text = str(time_value).strip()
+            if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", time_text):
+                time_value = default_cfg["time"]
+            else:
+                time_value = time_text
+
+        normalized[day_name] = {
+            "enabled": enabled,
+            "time": time_value,
+            "posts_per_day": _normalize_posts_per_day(day_cfg.get("posts_per_day", default_cfg["posts_per_day"])),
+        }
+    return normalized
 
 
 def _extract_domain(url: str) -> str:
@@ -1223,19 +1258,20 @@ def get_scheduler_config() -> dict:
             .first()
         )
     if not row:
-        return {"enabled": False, "schedule": dict(DEFAULT_SCHEDULE)}
+        return {"enabled": False, "schedule": _normalize_schedule(DEFAULT_SCHEDULE)}
     schedule = row["schedule"]
     if isinstance(schedule, str):
         schedule = json.loads(schedule)
     return {
         "enabled": bool(row["enabled"]),
-        "schedule": schedule or dict(DEFAULT_SCHEDULE),
+        "schedule": _normalize_schedule(schedule),
     }
 
 
 def save_scheduler_config(enabled: bool, schedule: dict) -> None:
     ensure_schema()
     now = _utc_now()
+    normalized_schedule = _normalize_schedule(schedule)
     with get_engine().begin() as conn:
         existing = (
             conn.execute(select(scheduler_config_table.c.id).order_by(scheduler_config_table.c.id.asc()).limit(1))
@@ -1246,11 +1282,11 @@ def save_scheduler_config(enabled: bool, schedule: dict) -> None:
             conn.execute(
                 update(scheduler_config_table)
                 .where(scheduler_config_table.c.id == existing["id"])
-                .values(enabled=int(enabled), schedule=schedule, updated_at=now)
+                .values(enabled=int(enabled), schedule=normalized_schedule, updated_at=now)
             )
         else:
             conn.execute(
-                scheduler_config_table.insert().values(enabled=int(enabled), schedule=schedule, updated_at=now)
+                scheduler_config_table.insert().values(enabled=int(enabled), schedule=normalized_schedule, updated_at=now)
             )
 
 

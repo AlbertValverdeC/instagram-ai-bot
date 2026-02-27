@@ -52,6 +52,8 @@ def _scheduler_tick() -> None:
     )
     from modules.post_store import (
         DAY_NAMES,
+        SCHEDULER_MAX_POSTS_PER_DAY,
+        SCHEDULER_MIN_POSTS_PER_DAY,
         get_queue_item_for_date,
         get_scheduler_config,
         mark_queue_item_completed,
@@ -103,34 +105,73 @@ def _scheduler_tick() -> None:
     item_id = item["id"]
     topic = item.get("topic")
     template = item.get("template")
+    raw_posts_per_day = day_cfg.get("posts_per_day", SCHEDULER_MIN_POSTS_PER_DAY)
+    try:
+        posts_per_day = int(raw_posts_per_day)
+    except (TypeError, ValueError):
+        posts_per_day = SCHEDULER_MIN_POSTS_PER_DAY
+    posts_per_day = max(SCHEDULER_MIN_POSTS_PER_DAY, min(posts_per_day, SCHEDULER_MAX_POSTS_PER_DAY))
+    # For manual queue items with a fixed topic, keep single execution by default.
+    if topic:
+        posts_per_day = 1
 
     with _scheduler_lock:
         # Double-check under lock
         if is_running():
             return
 
-        logger.info("Scheduler firing: item_id=%s date=%s topic=%s", item_id, today_str, topic or "(auto)")
+        logger.info(
+            "Scheduler firing: item_id=%s date=%s topic=%s runs=%s",
+            item_id,
+            today_str,
+            topic or "(auto)",
+            posts_per_day,
+        )
         mark_queue_item_processing(item_id)
-        set_running("auto-publish")
+
+    success_post_ids: list[int] = []
+    last_error_msg: str | None = None
 
     # Run pipeline synchronously (in this thread)
-    try:
-        run_pipeline("live", template, topic)
-    except Exception as e:
-        logger.error("Scheduler pipeline exception: %s", e)
+    for run_idx in range(posts_per_day):
+        set_running(f"auto-publish ({run_idx + 1}/{posts_per_day})")
+        try:
+            run_pipeline("live", template, topic)
+        except Exception as e:
+            logger.error("Scheduler pipeline exception (run %s/%s): %s", run_idx + 1, posts_per_day, e)
 
-    # Check result
-    snapshot = get_state_snapshot()
-    if snapshot["status"] == "done":
-        # Try to extract post_id from output
-        post_id = None
-        output = snapshot.get("output", "")
-        id_match = re.search(r"Saved generated carousel to post store \(id=(\d+)", output)
-        if id_match:
-            post_id = int(id_match.group(1))
-        mark_queue_item_completed(item_id, post_id=post_id, message="Auto-published OK")
-        logger.info("Scheduler completed: item_id=%s post_id=%s", item_id, post_id)
-    else:
-        error_msg = snapshot.get("error_summary") or "Pipeline did not complete successfully"
+        snapshot = get_state_snapshot()
+        if snapshot["status"] == "done":
+            output = snapshot.get("output", "")
+            id_matches = re.findall(r"Saved generated carousel to post store \(id=(\d+)", output)
+            if id_matches:
+                success_post_ids.append(int(id_matches[-1]))
+            continue
+
+        last_error_msg = snapshot.get("error_summary") or "Pipeline did not complete successfully"
+        logger.warning(
+            "Scheduler run failed: item_id=%s run=%s/%s error=%s",
+            item_id,
+            run_idx + 1,
+            posts_per_day,
+            last_error_msg,
+        )
+        break
+
+    if last_error_msg:
+        succeeded = len(success_post_ids)
+        if succeeded > 0:
+            error_msg = (
+                f"Ejecución parcial: {succeeded}/{posts_per_day} publicaciones completadas. "
+                f"Último error: {last_error_msg}"
+            )
+        else:
+            error_msg = last_error_msg
         mark_queue_item_error(item_id, message=error_msg)
         logger.warning("Scheduler failed: item_id=%s error=%s", item_id, error_msg)
+        return
+
+    final_post_id = success_post_ids[-1] if success_post_ids else None
+    success_message = f"Auto-published {len(success_post_ids)}/{posts_per_day}"
+    mark_queue_item_completed(item_id, post_id=final_post_id, message=success_message)
+    logger.info("Scheduler completed: item_id=%s post_id=%s runs=%s", item_id, final_post_id, posts_per_day)
